@@ -152,7 +152,7 @@ async function startServer(options: {
     const text = chunk.toString();
     process.stdout.write(text);
     if (!options.enableWhatsapp) return;
-    if (text.includes("WhatsApp conectado.") || text.includes("WhatsApp connected.")) {
+    if (text.includes("WhatsApp sincronizado.") || text.includes("WhatsApp synced.")) {
       promoteToService();
     }
   };

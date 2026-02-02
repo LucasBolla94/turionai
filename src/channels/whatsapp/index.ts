@@ -47,6 +47,7 @@ async function runSocket(
   let connected = false;
   let restartScheduled = false;
   let qrTimer: NodeJS.Timeout | null = null;
+  let syncReady = false;
 
   const scheduleRestart = (reason: string) => {
     if (restartScheduled) return;
@@ -96,11 +97,14 @@ async function runSocket(
         qrTimer = null;
       }
       console.log("WhatsApp conectado.");
-      await notifyAuthorizedUsers(sock, authNumbers);
+      if (syncReady) {
+        await notifyAuthorizedUsers(sock, authNumbers);
+      }
     }
 
     if (connection === "close") {
       connected = false;
+      syncReady = false;
       const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output
         ?.statusCode;
       if (statusCode === DisconnectReason.loggedOut) {
@@ -110,6 +114,14 @@ async function runSocket(
         return;
       }
       scheduleRestart("Conexao perdida");
+    }
+  });
+
+  sock.ev.on("messaging-history.set", async () => {
+    syncReady = true;
+    console.log("WhatsApp sincronizado.");
+    if (connected) {
+      await notifyAuthorizedUsers(sock, authNumbers);
     }
   });
 
