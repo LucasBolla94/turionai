@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { runSetupWizard } from "./wizard.js";
 
 async function main(): Promise<void> {

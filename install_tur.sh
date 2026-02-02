@@ -89,6 +89,10 @@ fi
 if [[ ! -t 0 ]]; then
   NON_INTERACTIVE="true"
 fi
+if [[ "$NON_INTERACTIVE" == "true" ]]; then
+  REINSTALL="true"
+  KEEP="false"
+fi
 
 if [[ -z "$REPO_URL" ]]; then
   echo "Missing --repo <git_url>"
@@ -207,7 +211,11 @@ else
 fi
 
 cd "$INSTALL_DIR"
-sudo chown -R "$TARGET_USER":"$TARGET_USER" "$INSTALL_DIR"
+if [[ "$(id -u)" -eq 0 ]]; then
+  chown -R "$TARGET_USER":"$TARGET_USER" "$INSTALL_DIR"
+else
+  sudo chown -R "$TARGET_USER":"$TARGET_USER" "$INSTALL_DIR"
+fi
 
 npm config set fund false
 npm config set audit false
@@ -215,9 +223,25 @@ npm install
 npm run build
 npm prune --omit=dev
 
-sudo ln -sf "$INSTALL_DIR/dist/cli/turion.js" /usr/local/bin/turion
+NODE_BIN="$(command -v node || true)"
+if [[ -z "$NODE_BIN" ]]; then
+  echo "Node.js not found after install."
+  exit 1
+fi
+
+sudo tee /usr/local/bin/turion >/dev/null <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$INSTALL_DIR"
+exec "$NODE_BIN" "$INSTALL_DIR/dist/cli/turion.js" "\$@"
+EOF
 sudo chmod +x /usr/local/bin/turion
 
 say "Instalacao concluida!"
-say "Agora execute: turion setup"
+if [[ -e /dev/tty ]]; then
+  say "Iniciando setup agora..."
+  /usr/local/bin/turion setup </dev/tty
+else
+  say "Agora execute: turion setup"
+fi
 say "Se precisar entrar na pasta: cd $INSTALL_DIR"
