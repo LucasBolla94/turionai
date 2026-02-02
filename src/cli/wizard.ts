@@ -104,6 +104,7 @@ export async function runSetupWizard(): Promise<void> {
     } else if (runAsService) {
       console.log("Iniciando servico em segundo plano...");
       await startServiceOnly();
+      await followServiceUntilSynced(enableWhatsapp);
     } else {
       console.log("Pronto. Quando quiser iniciar: npm run start (ou node dist/index.js).");
     }
@@ -147,35 +148,9 @@ async function startServer(options: {
     return;
   }
 
-  const child = spawn("node", [distPath], { stdio: ["inherit", "pipe", "pipe"] });
-  const onData = (chunk: Buffer) => {
-    const text = chunk.toString();
-    process.stdout.write(text);
-    if (!options.enableWhatsapp) return;
-    if (text.includes("WhatsApp sincronizado.") || text.includes("WhatsApp synced.")) {
-      promoteToService();
-    }
-  };
-  child.stdout?.on("data", onData);
-  child.stderr?.on("data", (chunk: Buffer) => {
-    process.stderr.write(chunk.toString());
-  });
-
-  const promoteToService = () => {
-    child.stdout?.off("data", onData);
-    console.log("\nConexao feita. Iniciando em segundo plano...");
-    ensureServiceExists();
-    const systemctl = spawn("sudo", ["systemctl", "enable", "--now", "agenttur"], {
-      stdio: "inherit"
-    });
-    systemctl.on("exit", () => {
-      child.kill("SIGINT");
-    });
-  };
-
-  await new Promise<void>((resolve) => {
-    child.on("exit", () => resolve());
-  });
+  console.log("\nIniciando servico em segundo plano...");
+  await startServiceOnly();
+  await followServiceUntilSynced(options.enableWhatsapp);
 }
 
 async function startServiceOnly(): Promise<void> {
@@ -185,6 +160,36 @@ async function startServiceOnly(): Promise<void> {
   });
   await new Promise<void>((resolve) => {
     systemctl.on("exit", () => resolve());
+  });
+}
+
+async function followServiceUntilSynced(enableWhatsapp: boolean): Promise<void> {
+  if (!enableWhatsapp) {
+    console.log("Servico iniciado.");
+    return;
+  }
+
+  console.log("Aguardando sincronizacao do WhatsApp...");
+  const journal = spawn("sudo", ["journalctl", "-u", "agenttur", "-f", "-n", "50"], {
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  const onData = (chunk: Buffer) => {
+    const text = chunk.toString();
+    process.stdout.write(text);
+    if (text.includes("WhatsApp sincronizado.") || text.includes("WhatsApp synced.")) {
+      console.log("\nTudo certo. Agora voce pode usar o WhatsApp para comandos.");
+      journal.kill("SIGINT");
+    }
+  };
+
+  journal.stdout?.on("data", onData);
+  journal.stderr?.on("data", (chunk: Buffer) => {
+    process.stderr.write(chunk.toString());
+  });
+
+  await new Promise<void>((resolve) => {
+    journal.on("exit", () => resolve());
   });
 }
 
