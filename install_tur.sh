@@ -264,6 +264,7 @@ Environment=NODE_ENV=production
 WantedBy=multi-user.target
 EOF
 sudo systemctl daemon-reload
+sudo systemctl enable agenttur >/dev/null 2>&1 || true
 
 say "Instalacao concluida!"
 if [[ -e /dev/tty ]]; then
