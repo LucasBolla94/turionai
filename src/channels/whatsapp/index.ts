@@ -9,6 +9,9 @@ import qrcode from "qrcode-terminal";
 import type { Router } from "../../core/router.js";
 import fs from "node:fs";
 
+const QR_REFRESH_MS = 60_000;
+const RECONNECT_MS = 3_000;
+
 export async function startWhatsAppChannel(
   router: Router,
   authDir: string,
@@ -24,38 +27,80 @@ async function runSocket(
 ): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const { version } = await fetchLatestBaileysVersion();
+
   const sock = makeWASocket({
     version,
     auth: state,
     logger: pino({ level: "silent" })
   });
 
+  let lastQrAt = 0;
+  let connected = false;
+  let restartScheduled = false;
+  let qrTimer: NodeJS.Timeout | null = null;
+
+  const scheduleRestart = (reason: string) => {
+    if (restartScheduled) return;
+    restartScheduled = true;
+    console.log(`WhatsApp: ${reason}. Reiniciando conexao...`);
+    setTimeout(() => {
+      try {
+        sock.ws?.close();
+      } catch {
+        // ignore
+      }
+      runSocket(router, authDir, authNumbers).catch((err) => {
+        console.log(`Falha ao reiniciar WhatsApp: ${String(err)}`);
+      });
+    }, RECONNECT_MS);
+  };
+
+  const scheduleQrRefresh = () => {
+    if (qrTimer) clearInterval(qrTimer);
+    qrTimer = setInterval(() => {
+      if (connected) return;
+      if (!lastQrAt) return;
+      const age = Date.now() - lastQrAt;
+      if (age > QR_REFRESH_MS) {
+        console.log("QR expirou. Gerando um novo QR...");
+        scheduleRestart("QR expirado");
+      }
+    }, 5_000);
+  };
+
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
+
     if (qr) {
+      lastQrAt = Date.now();
       console.log("QR Code para conexao WhatsApp (escaneie com o celular):");
       qrcode.generate(qr, { small: true });
+      scheduleQrRefresh();
     }
+
+    if (connection === "open") {
+      connected = true;
+      if (qrTimer) {
+        clearInterval(qrTimer);
+        qrTimer = null;
+      }
+      console.log("WhatsApp conectado.");
+      await notifyAuthorizedUsers(sock, authNumbers);
+    }
+
     if (connection === "close") {
+      connected = false;
       const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output
         ?.statusCode;
       if (statusCode === DisconnectReason.loggedOut) {
         console.log("WhatsApp desconectado pelo telefone. Gerando novo QR...");
         resetAuth(authDir);
-        setTimeout(() => {
-          runSocket(router, authDir, authNumbers).catch((err) => {
-            console.log(`Falha ao reiniciar WhatsApp: ${String(err)}`);
-          });
-        }, 1500);
+        scheduleRestart("Sessao encerrada");
         return;
       }
-      console.log("Conexao com WhatsApp perdida. Tentando reconectar...");
-    }
-    if (connection === "open") {
-      console.log("WhatsApp conectado.");
-      await notifyAuthorizedUsers(sock, authNumbers);
+      scheduleRestart("Conexao perdida");
     }
   });
 
