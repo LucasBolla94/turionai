@@ -101,6 +101,9 @@ export async function runSetupWizard(): Promise<void> {
         enableWhatsapp,
         runAsService
       });
+    } else if (runAsService) {
+      console.log("Iniciando servico em segundo plano...");
+      await startServiceOnly();
     } else {
       console.log("Pronto. Quando quiser iniciar: npm run start (ou node dist/index.js).");
     }
@@ -171,6 +174,15 @@ async function startServer(options: {
 
   await new Promise<void>((resolve) => {
     child.on("exit", () => resolve());
+  });
+}
+
+async function startServiceOnly(): Promise<void> {
+  const systemctl = spawn("sudo", ["systemctl", "enable", "--now", "agenttur"], {
+    stdio: "inherit"
+  });
+  await new Promise<void>((resolve) => {
+    systemctl.on("exit", () => resolve());
   });
 }
 

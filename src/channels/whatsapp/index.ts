@@ -122,6 +122,8 @@ async function runSocket(
       const text = extractText(message.message);
       if (!text) continue;
 
+      await sock.sendMessage(jid, { text: "Turion escutando." });
+
       const response = await router.handleMessage({
         text,
         user,
@@ -165,7 +167,7 @@ async function notifyAuthorizedUsers(
   sock: ReturnType<typeof makeWASocket>,
   authNumbers: string[]
 ): Promise<void> {
-  const text = "Turion conectado com sucesso. Tudo pronto para usar.";
+  const text = "Turion conectado. Tudo pronto. Agora voce pode usar o WhatsApp para comandos.";
   for (const number of authNumbers) {
     const jid = `${number}@s.whatsapp.net`;
     try {
