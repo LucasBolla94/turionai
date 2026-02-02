@@ -164,6 +164,7 @@ async function startServer(options: {
   const promoteToService = () => {
     child.stdout?.off("data", onData);
     console.log("\nConexao feita. Iniciando em segundo plano...");
+    ensureServiceExists();
     const systemctl = spawn("sudo", ["systemctl", "enable", "--now", "agenttur"], {
       stdio: "inherit"
     });
@@ -178,12 +179,42 @@ async function startServer(options: {
 }
 
 async function startServiceOnly(): Promise<void> {
+  ensureServiceExists();
   const systemctl = spawn("sudo", ["systemctl", "enable", "--now", "agenttur"], {
     stdio: "inherit"
   });
   await new Promise<void>((resolve) => {
     systemctl.on("exit", () => resolve());
   });
+}
+
+function ensureServiceExists(): void {
+  const servicePath = "/etc/systemd/system/agenttur.service";
+  if (fs.existsSync(servicePath)) return;
+
+  const nodePath = process.execPath;
+  const workingDir = process.cwd();
+  const serviceContent = `[Unit]
+Description=AgentTUR service
+After=network.target
+
+[Service]
+Type=simple
+User=${process.env.SUDO_USER ?? process.env.USER ?? "ubuntu"}
+WorkingDirectory=${workingDir}
+ExecStart=${nodePath} ${path.join(workingDir, "dist", "index.js")}
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+`;
+
+  const tmpPath = path.join("/tmp", "agenttur.service");
+  fs.writeFileSync(tmpPath, serviceContent, "utf8");
+  spawn("sudo", ["mv", tmpPath, servicePath], { stdio: "inherit" });
+  spawn("sudo", ["systemctl", "daemon-reload"], { stdio: "inherit" });
 }
 
 function ask(rl: readline.Interface, prompt: string): Promise<string> {
