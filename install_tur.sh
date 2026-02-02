@@ -6,6 +6,24 @@ DEFAULT_BRANCH="main"
 REPO_URL="https://github.com/LucasBolla94/agent.git"
 INSTALL_DIR="/opt/agenttur"
 
+banner() {
+  cat <<'EOF'
+   _______          _             
+  |__   __|        (_)            
+     | | _   _ _ __ _  ___  _ __  
+     | || | | | '__| |/ _ \| '_ \ 
+     | || |_| | |  | | (_) | | | |
+     |_| \__,_|_|  |_|\___/|_| |_|
+
+     [==]----[==]----[==]
+EOF
+}
+
+say() {
+  echo ""
+  echo ">> $1"
+}
+
 usage() {
   cat <<EOF
 ${APP_NAME} installer
@@ -64,7 +82,12 @@ install_deps_debian() {
   fi
 
   if ! require_cmd docker; then
-    sudo apt-get install -y docker.io docker-compose-plugin
+    if sudo apt-get install -y docker.io docker-compose-plugin; then
+      true
+    else
+      say "docker-compose-plugin indisponível. Instalando docker-compose clássico."
+      sudo apt-get install -y docker.io docker-compose
+    fi
     sudo systemctl enable --now docker
   fi
 }
@@ -106,29 +129,50 @@ detect_and_install() {
   exit 1
 }
 
+banner
+say "Oi! Vou cuidar da instalação do ${APP_NAME} pra você."
+say "Posso demorar alguns minutos. Vamos juntos!"
+
 detect_and_install
 
 if [[ -d "$INSTALL_DIR" ]]; then
-  echo "Directory exists: $INSTALL_DIR"
+  say "Pasta encontrada: $INSTALL_DIR"
+  echo "Esse arquivo já está instalado. Você gostaria de:"
+  echo "  1) Deletar e reinstalar"
+  echo "  2) Manter tudo (apenas atualizar)"
+  read -r -p "> " choice
+  if [[ "$choice" == "1" ]]; then
+    say "Removendo instalação antiga..."
+    sudo rm -rf "$INSTALL_DIR"
+    sudo mkdir -p "$INSTALL_DIR"
+    sudo chown "$USER":"$USER" "$INSTALL_DIR"
+    say "Baixando o repositório..."
+    git clone --branch "$DEFAULT_BRANCH" "$REPO_URL" "$INSTALL_DIR"
+  else
+    say "Mantendo arquivos e atualizando..."
+    if [[ -d "$INSTALL_DIR/.git" ]]; then
+      git -C "$INSTALL_DIR" pull
+    else
+      say "Repositório ausente. Fazendo clone limpo..."
+      git clone --branch "$DEFAULT_BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    fi
+  fi
 else
+  say "Criando pasta: $INSTALL_DIR"
   sudo mkdir -p "$INSTALL_DIR"
   sudo chown "$USER":"$USER" "$INSTALL_DIR"
-fi
-
-if [[ ! -d "$INSTALL_DIR/.git" ]]; then
+  say "Baixando o repositório..."
   git clone --branch "$DEFAULT_BRANCH" "$REPO_URL" "$INSTALL_DIR"
-else
-  echo "Repo already cloned. Pulling latest..."
-  git -C "$INSTALL_DIR" pull
 fi
 
 cd "$INSTALL_DIR"
+npm config set fund false
+npm config set audit false
 npm install
 npm run build
 npm prune --omit=dev
 
 sudo npm install -g .
 
-echo ""
-echo "Instalação concluída."
-echo "Próximo passo: execute 'turion setup' para configurar e iniciar o servidor."
+say "Instalação concluída!"
+say "Agora execute: turion setup"

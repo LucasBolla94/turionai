@@ -15,7 +15,7 @@ async function bootstrap(): Promise<void> {
   const router = new Router(registry, logger, env.authNumbers);
 
   if (env.enableWhatsapp) {
-    await startWhatsAppChannel(router, env.waAuthDir);
+    await startWhatsAppChannel(router, env.waAuthDir, env.authNumbers);
   }
 
   if (env.enableTui) {

@@ -1,15 +1,16 @@
 import makeWASocket, {
   fetchLatestBaileysVersion,
-  makeInMemoryStore,
   useMultiFileAuthState,
   getContentType
 } from "@whiskeysockets/baileys";
+import makeInMemoryStore from "@whiskeysockets/baileys";
 import pino from "pino";
 import type { Router } from "../../core/router.js";
 
 export async function startWhatsAppChannel(
   router: Router,
-  authDir: string
+  authDir: string,
+  authNumbers: string[]
 ): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const { version } = await fetchLatestBaileysVersion();
@@ -26,7 +27,7 @@ export async function startWhatsAppChannel(
 
   sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", (update) => {
+  sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
     if (connection === "close") {
       const reason = (lastDisconnect?.error as { message?: string })?.message ?? "unknown";
@@ -34,6 +35,7 @@ export async function startWhatsAppChannel(
     }
     if (connection === "open") {
       console.log("WhatsApp connected.");
+      await notifyAuthorizedUsers(sock, authNumbers);
     }
   });
 
@@ -60,10 +62,10 @@ export async function startWhatsAppChannel(
   console.log("WhatsApp channel ready. Scan the QR code if prompted.");
 }
 
-function extractText(message: Record<string, unknown>): string | null {
-  const type = getContentType(message);
+function extractText(message: unknown): string | null {
+  const type = getContentType(message as Record<string, unknown>);
   if (!type) return null;
-  const content = message[type] as unknown;
+  const content = (message as Record<string, unknown>)[type] as unknown;
   if (!content) return null;
 
   if (type === "conversation" && typeof content === "string") {
@@ -79,4 +81,20 @@ function extractText(message: Record<string, unknown>): string | null {
   }
 
   return null;
+}
+
+async function notifyAuthorizedUsers(
+  sock: ReturnType<typeof makeWASocket>,
+  authNumbers: string[]
+): Promise<void> {
+  const text = "Turion conectado com sucesso. Tudo pronto para usar.";
+  for (const number of authNumbers) {
+    const jid = `${number}@s.whatsapp.net`;
+    try {
+      await sock.sendMessage(jid, { text });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "unknown";
+      console.log(`Falha ao notificar ${number}: ${message}`);
+    }
+  }
 }
