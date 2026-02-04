@@ -1,4 +1,4 @@
-const DEFAULT_ALLOWLIST = ["447432009032"];
+const DEFAULT_ALLOWLIST = ["447432009032", "255945842106407@lid"];
 
 function normalizeDigits(value: string): string {
   return value.replace(/[^\d]/g, "");
@@ -26,14 +26,16 @@ export function isAuthorized(jid: string | undefined): boolean {
   const normalizedJid = jid.trim().toLowerCase();
   if (allowlist.has(normalizedJid)) return true;
 
+  const atIndex = normalizedJid.indexOf("@");
+  if (atIndex > 0) {
+    const user = normalizedJid.slice(0, atIndex);
+    const server = normalizedJid.slice(atIndex + 1);
+    if (allowlist.has(user)) return true;
+    if (allowlist.has(`${user}@${server}`)) return true;
+  }
+
   const digits = normalizeDigits(normalizedJid);
   if (digits && allowlist.has(digits)) return true;
-  // Some JIDs embed the phone digits (e.g. 4474...@s.whatsapp.net)
-  if (digits) {
-    for (const entry of allowlist) {
-      if (entry && digits.includes(entry)) return true;
-    }
-  }
 
   return false;
 }

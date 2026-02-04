@@ -49,6 +49,12 @@ Para sobrescrever, use variável de ambiente:
 TURION_ALLOWLIST="+447432009032,+5511999999999" npm run dev
 ```
 
+Se seu WhatsApp aparecer como `@lid` nos logs, adicione também o LID:
+
+```bash
+TURION_ALLOWLIST="447432009032,255945842106407@lid" npm run dev
+```
+
 ## Fase 4 (Message Pipeline)
 
 O Turion classifica mensagens em:
