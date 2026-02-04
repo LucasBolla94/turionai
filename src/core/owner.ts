@@ -39,8 +39,8 @@ export async function ensurePairingCode(): Promise<string> {
   }
   const code = String(randomInt(100000, 999999));
   const payload: OwnerState = {
+    ...(existing ?? { created_at: new Date().toISOString() }),
     pairing_code: code,
-    created_at: new Date().toISOString(),
   };
   await saveOwnerState(payload);
   return code;

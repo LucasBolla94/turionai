@@ -224,6 +224,15 @@ export async function initWhatsApp(): Promise<WASocket> {
         console.warn(`[Turion] msg bloqueada`, { sender, from });
         continue;
       }
+      if (pending && pending.type === "OWNER_SETUP") {
+        if (!ownerJid) {
+          await setOwner(sender);
+        }
+        const handled = await handleOwnerSetup(socket, from, threadId, pending, text);
+        if (handled) {
+          continue;
+        }
+      }
       if (!ownerJid) {
         const code = owner?.pairing_code ?? (await ensurePairingCode());
         const normalized = text.trim();
@@ -266,12 +275,6 @@ export async function initWhatsApp(): Promise<WASocket> {
         }
         await sendAndLog(socket, from, threadId, "Fechado. Vou ajustar meu jeito de responder.");
         continue;
-      }
-      if (pending && pending.type === "OWNER_SETUP") {
-        const handled = await handleOwnerSetup(socket, from, threadId, pending, text);
-        if (handled) {
-          continue;
-        }
       }
       if (pending && pending.type === "EMAIL_DELETE_PICK") {
         const handled = await handlePendingEmailDeletePick(socket, from, threadId, pending, text);
