@@ -49,6 +49,7 @@ export interface BrainResult {
   args: Record<string, string | number | boolean | null>;
   missing: string[];
   needs_confirmation: boolean;
+  reply?: string;
   actions?: Array<{
     type: "create_dir" | "write_file" | "run_script";
     path?: string;
@@ -76,11 +77,13 @@ export async function interpretStrictJson(input: string): Promise<BrainResult | 
     "Personalidade: positiva, amigável e solidária; calma, paciente e respeitosa; fala natural e próxima; explica com clareza; adapta o tom ao contexto.",
     "Retorne APENAS JSON válido e nada mais.",
     "Chaves obrigatórias: intent, args, missing, needs_confirmation.",
+    "Chave opcional: reply (string com resposta ao usuário).",
     "Chave opcional: actions (array).",
     "intent: string UPPERCASE.",
     "args: objeto simples.",
     "missing: array de strings.",
     "needs_confirmation: boolean.",
+    "reply: resposta curta e natural em português (ex: saudar quando o usuário diz oi).",
     "actions: itens com type (create_dir|write_file|run_script) e campos correspondentes.",
   ].join(" ");
 

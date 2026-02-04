@@ -265,13 +265,16 @@ async function handleBrain(socket: WASocket, to: string, text: string): Promise<
       await socket.sendMessage(to, { text: "IA sem resposta válida." });
       return;
     }
-    const response = [
+    const responseLines = [
       `Intent: ${result.intent}`,
       `Args: ${JSON.stringify(result.args)}`,
       result.missing.length ? `Missing: ${result.missing.join(", ")}` : "Missing: none",
       `Needs confirmation: ${result.needs_confirmation}`,
-    ].join("\n");
-    await socket.sendMessage(to, { text: response });
+    ];
+    if (result.reply) {
+      responseLines.push(`Reply: ${result.reply}`);
+    }
+    await socket.sendMessage(to, { text: responseLines.join("\n") });
 
     if (result.actions && result.actions.length > 0) {
       const outputs = await executeActions(result.actions);
