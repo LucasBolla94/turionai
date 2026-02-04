@@ -25,3 +25,12 @@ export async function consumeUpdatePending(): Promise<UpdateState | null> {
     return null;
   }
 }
+
+export async function hasUpdatePending(): Promise<boolean> {
+  try {
+    await readFile(UPDATE_PATH, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}

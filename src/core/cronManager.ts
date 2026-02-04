@@ -107,6 +107,18 @@ export async function initCronManager(): Promise<void> {
     jobs.push(job);
     await saveState(jobs);
   }
+  if (!jobs.find((job) => job.name === "update_check_10m")) {
+    const job: CronJob = {
+      name: "update_check_10m",
+      schedule: "*/10 * * * *",
+      jobType: "update_check",
+      payload: "",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    };
+    jobs.push(job);
+    await saveState(jobs);
+  }
   for (const job of jobs) {
     if (!job.enabled) continue;
     const task = buildTask(job);

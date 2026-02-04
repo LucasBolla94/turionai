@@ -37,7 +37,7 @@ import { getTimezone } from "../core/timezone";
 import { EmailSkill } from "../skills/emailSkill";
 import { clearPending, getPending, setPending } from "../core/pendingActions";
 import { loadEmailConfig } from "../core/emailStore";
-import { consumeUpdatePending, markUpdatePending } from "../core/updateStatus";
+import { consumeUpdatePending, hasUpdatePending, markUpdatePending } from "../core/updateStatus";
 import { addEmailRule, extractEmailDomain } from "../core/emailRules";
 import { loadEmailSnapshot } from "../core/emailSnapshot";
 import { applyFeedback, formatReply, getBehaviorProfile, touchEmotionState } from "../core/behavior";
@@ -92,7 +92,7 @@ export async function initWhatsApp(): Promise<WASocket> {
       const pendingUpdate = await consumeUpdatePending();
       if (pendingUpdate?.to) {
         await socket.sendMessage(pendingUpdate.to, {
-          text: "✅ Update concluído. Turion está online novamente.",
+          text: randomUpdateBackMessage(),
         });
       }
     }
@@ -855,16 +855,10 @@ async function handleBrain(
         status = "";
       }
       if (status.includes("UPDATE_AVAILABLE")) {
-        await setPending(threadId, {
-          type: "RUN_UPDATE",
-          createdAt: new Date().toISOString(),
-        });
-        await sendAndLog(
-          socket,
-          to,
-          threadId,
-          "Achei um update novo agora. Quer que eu atualize? (sim/nao)",
-        );
+        await sendAndLog(socket, to, threadId, pickUpdateFoundMessage());
+        const updateScript =
+          process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
+        await executeUpdate(socket, to, threadId, updateScript);
         return;
       }
       if (status.includes("UP_TO_DATE")) {
@@ -876,16 +870,10 @@ async function handleBrain(
         );
         return;
       }
-      await sendAndLog(
-        socket,
-        to,
-        threadId,
-        "Nao consegui checar agora. Quer que eu tente atualizar mesmo assim? Me diz sim ou nao.",
-      );
-      await setPending(threadId, {
-        type: "RUN_UPDATE",
-        createdAt: new Date().toISOString(),
-      });
+      await sendAndLog(socket, to, threadId, "Nao consegui checar agora. Vou atualizar mesmo assim.");
+      const updateScript =
+        process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
+      await executeUpdate(socket, to, threadId, updateScript);
       return;
     }
 
@@ -899,16 +887,10 @@ async function handleBrain(
         status = "";
       }
       if (status.includes("UPDATE_AVAILABLE")) {
-        await setPending(threadId, {
-          type: "RUN_UPDATE",
-          createdAt: new Date().toISOString(),
-        });
-        await sendAndLog(
-          socket,
-          to,
-          threadId,
-          "Achei uma atualizacao nova por aqui. Quer que eu atualize agora? Me responde com 'sim' ou 'nao'.",
-        );
+        await sendAndLog(socket, to, threadId, pickUpdateFoundMessage());
+        const updateScript =
+          process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
+        await executeUpdate(socket, to, threadId, updateScript);
         return;
       }
       if (status.includes("UP_TO_DATE")) {
@@ -920,16 +902,10 @@ async function handleBrain(
         );
         return;
       }
-      await setPending(threadId, {
-        type: "RUN_UPDATE",
-        createdAt: new Date().toISOString(),
-      });
-      await sendAndLog(
-        socket,
-        to,
-        threadId,
-        "Nao consegui validar o status agora, mas posso atualizar mesmo assim. Quer que eu siga? (sim/nao)",
-      );
+      await sendAndLog(socket, to, threadId, "Nao consegui validar o status agora. Vou atualizar mesmo assim.");
+      const updateScript =
+        process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
+      await executeUpdate(socket, to, threadId, updateScript);
       return;
     }
 
@@ -943,16 +919,10 @@ async function handleBrain(
         status = "";
       }
       if (status.includes("UPDATE_AVAILABLE")) {
-        await setPending(threadId, {
-          type: "RUN_UPDATE",
-          createdAt: new Date().toISOString(),
-        });
-        await sendAndLog(
-          socket,
-          to,
-          threadId,
-          "Encontrei um update novo. Quer que eu atualize agora? (sim/nao)",
-        );
+        await sendAndLog(socket, to, threadId, pickUpdateFoundMessage());
+        const updateScript =
+          process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
+        await executeUpdate(socket, to, threadId, updateScript);
         return;
       }
       if (status.includes("UP_TO_DATE")) {
@@ -964,16 +934,10 @@ async function handleBrain(
         );
         return;
       }
-      await sendAndLog(
-        socket,
-        to,
-        threadId,
-        "Nao consegui checar o status agora. Quer que eu tente atualizar mesmo assim?",
-      );
-      await setPending(threadId, {
-        type: "RUN_UPDATE",
-        createdAt: new Date().toISOString(),
-      });
+      await sendAndLog(socket, to, threadId, "Nao consegui checar o status agora. Vou atualizar mesmo assim.");
+      const updateScript =
+        process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
+      await executeUpdate(socket, to, threadId, updateScript);
       return;
     }
 
@@ -1741,6 +1705,26 @@ async function maybeHandleEmailDeleteRequest(
     })),
     createdAt: new Date().toISOString(),
   });
+
+  registerCronHandler("update_check", async () => {
+    const state = await getInteractionState();
+    const lastJid = state.lastJid;
+    if (!lastJid) return;
+    if (await hasUpdatePending()) return;
+    const checkScript =
+      process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
+    let status = "";
+    try {
+      status = await runScript(checkScript);
+    } catch {
+      status = "";
+    }
+    if (!status.includes("UPDATE_AVAILABLE")) return;
+    const updateScript =
+      process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
+    await sendAndLog(socket, lastJid, lastJid.replace(/[^\w]/g, "_"), pickUpdateFoundMessage());
+    await executeUpdate(socket, lastJid, lastJid.replace(/[^\w]/g, "_"), updateScript);
+  });
   await sendAndLog(socket, to, threadId, buildEmailDeletePrompt(resolved.items));
   return true;
 }
@@ -1987,10 +1971,23 @@ function parseUpdatedFiles(output: string): string {
 
 function randomUpdateBackMessage(): string {
   const messages = [
-    "Voltei 0km haha. Pronto pra trabalhar!",
-    "Atualizei e ja estou online de novo. Bora!",
-    "Prontinho, ja voltei. O que vamos fazer agora?",
-    "To de volta e tudo certo por aqui!",
+    "Opa, to de volta. Bora?",
+    "Prontinho, voltei online.",
+    "Voltei 0km haha. Em que seguimos?",
+    "Tudo certo aqui, ja estou de volta.",
+    "Ja voltei. Quer que eu faca mais algo?",
+  ];
+  return messages[Math.floor(Math.random() * messages.length)];
+}
+
+function pickUpdateFoundMessage(): string {
+  const messages = [
+    "Achei um update aqui. Vou aplicar agora, ja volto.",
+    "Tem atualizacao pendente. Vou aproveitar e atualizar rapidinho.",
+    "Atualizacao encontrada. Vou aplicar e ja te chamo de volta.",
+    "Encontrei update. Vou atualizar aqui e ja volto online.",
+    "Preciso fazer um update aqui. Enquanto roda, vou pegar uma agua.",
+    "Tem update para fazer. Vou aplicar e ja te aviso quando voltar.",
   ];
   return messages[Math.floor(Math.random() * messages.length)];
 }
@@ -2004,6 +2001,6 @@ async function executeUpdate(
   await markUpdatePending(to);
   const output = await runScript(updateScript);
   const summary = parseUpdatedFiles(output);
-  await sendAndLog(socket, to, threadId, `${summary} Reiniciando...`);
+    await sendAndLog(socket, to, threadId, `${summary} Reiniciando... Ja volto.`);
   setTimeout(() => process.exit(0), 1000);
 }
