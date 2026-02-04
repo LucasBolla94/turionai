@@ -1760,7 +1760,7 @@ function buildModelUpdateExplanation(): string {
   const model = process.env.TURION_XAI_MODEL || "grok-4-1-fast-reasoning";
   return [
     "O modelo (Grok) é um serviço externo: eu não faço update dele localmente.",
-    `"`"Modelo configurado agora: ${model}.`"`",
+    "Modelo configurado agora: " + model + ".",
     "Se quiser trocar, me diga o modelo exato e eu ajusto a configuracao.",
   ].join("\n");
 }
@@ -2944,6 +2944,8 @@ async function executeUpdate(
     await sendAndLog(socket, to, threadId, `${summary} Reiniciando... Ja volto.`);
   setTimeout(() => process.exit(0), 1000);
 }
+
+
 
 
 
