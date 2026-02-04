@@ -1068,12 +1068,19 @@ async function handleBrain(
   }
 }
 
+async function sendTyping(socket: WASocket, to: string, ms = 1200): Promise<void> {
+  await socket.sendPresenceUpdate("composing", to);
+  await new Promise((r) => setTimeout(r, ms));
+  await socket.sendPresenceUpdate("paused", to);
+}
+
 async function sendAndLog(
   socket: WASocket,
   to: string,
   threadId: string,
   text: string,
 ): Promise<void> {
+  await sendTyping(socket, to, 1200);
   const behavior = await getBehaviorProfile();
   const formattedText = formatReply(text, behavior);
   await socket.sendMessage(to, { text: formattedText });
