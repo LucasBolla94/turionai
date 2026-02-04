@@ -38,12 +38,14 @@ export type PendingAction =
       type: "OWNER_SETUP";
       stage:
         | "await_api_key"
-        | "await_name"
-        | "await_role"
-        | "await_tone"
-        | "await_timezone"
-        | "await_language"
-        | "await_goals";
+        | "ask_name"
+        | "ask_context"
+        | "ask_style"
+        | "ask_location"
+        | "ask_timezone"
+        | "ask_language"
+        | "ask_goal"
+        | "confirm_summary";
       createdAt: string;
     }
   | {

@@ -9,6 +9,14 @@ export interface OwnerState {
   pairing_code?: string;
   created_at: string;
   paired_at?: string;
+  setup_done?: boolean;
+  city?: string;
+  country?: string;
+  timezone?: string;
+  language?: string;
+  tone?: string;
+  response_detail?: string;
+  goal?: string;
 }
 
 const OWNER_DIR = resolve("state", "memory");

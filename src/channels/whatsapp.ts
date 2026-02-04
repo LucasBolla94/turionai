@@ -31,7 +31,12 @@ import {
   buildMemoryContext,
   searchMemoryByKeywords,
 } from "../core/memoryStore";
-import { getCurrentTimeString, normalizeTimezoneInput, setTimezone } from "../core/timezone";
+import {
+  getCurrentTimeString,
+  inferTimezoneFromLocation,
+  normalizeTimezoneInput,
+  setTimezone,
+} from "../core/timezone";
 import { registerCronHandler } from "../core/cronManager";
 import { readLatestDigest } from "../core/conversationStore";
 import { getTimezone } from "../core/timezone";
@@ -45,6 +50,7 @@ import { applyFeedback, formatReply, getBehaviorProfile, setBehaviorProfile, tou
 import { recordInteraction, getInteractionState, markCheckinSent } from "../core/interaction";
 import { updatePreferencesFromMessage } from "../core/preferences";
 import { ensurePairingCode, getOwnerState, setOwner, updateOwnerDetails } from "../core/owner";
+import { CAPABILITIES } from "../config/capabilities";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -67,6 +73,68 @@ function sameOwner(a: string | null | undefined, b: string | null | undefined): 
   const aNum = normalizeJid(a);
   const bNum = normalizeJid(b);
   return aNum.length > 6 && aNum === bNum;
+}
+
+function isPostSetupHelpRequest(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("primeiros comandos") ||
+    normalized.includes("o que voce faz") ||
+    normalized.includes("o que vc faz") ||
+    normalized.includes("como usar") ||
+    normalized.includes("me mostra") ||
+    normalized.includes("me mostra os comandos")
+  );
+}
+
+function buildPostSetupIntro(name: string): string {
+  const lines = [
+    `Fechado, ${name}.`,
+    "Aqui vao alguns jeitos simples de me usar:",
+    buildPostSetupHelp(),
+    "Quer que eu ja configure algo pra voce agora?",
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+function buildPostSetupHelp(): string {
+  const buckets = CAPABILITIES.map((category) => {
+    const examples = category.items.slice(0, 2).map((item) => `- ${item}`);
+    return [`${category.title}:`, ...examples].join("\n");
+  });
+  return buckets.join("\n");
+}
+
+function parseLocation(value: string): { city: string; country?: string } {
+  const cleaned = value.trim().replace(/\s+/g, " ");
+  if (cleaned.includes(" em ")) {
+    const parts = cleaned.split(" em ");
+    const city = parts.at(-1)?.trim();
+    if (city) {
+      return { city };
+    }
+  }
+  if (cleaned.includes(",")) {
+    const [city, country] = cleaned.split(",").map((part) => part.trim());
+    return { city, country: country || undefined };
+  }
+  const tokens = cleaned.split(" ");
+  if (tokens.length >= 2) {
+    return { city: tokens.slice(0, -1).join(" "), country: tokens.at(-1) };
+  }
+  return { city: cleaned };
+}
+
+function buildOnboardingSummary(owner: Awaited<ReturnType<typeof getOwnerState>>): string {
+  if (!owner) return "Fechou. Ainda preciso de alguns detalhes.";
+  const name = owner.owner_name ?? "voce";
+  const city = owner.city ?? "sua cidade";
+  const country = owner.country ? `/${owner.country}` : "";
+  const language = owner.language ?? "pt-BR";
+  const tone = owner.tone ?? "casual";
+  const detail = owner.response_detail ?? "media";
+  const goal = owner.goal ? ` Quer que eu te ajude com: ${owner.goal}.` : "";
+  return `Fechou: voce e ${name}, esta em ${city}${country}, prefere ${language}, tom ${tone} e respostas ${detail}.${goal}`;
 }
 
 function markSeen(id: string): void {
@@ -237,6 +305,9 @@ export async function initWhatsApp(): Promise<WASocket> {
         console.warn(`[Turion] msg bloqueada`, { sender, from });
         continue;
       }
+      if (owner?.setup_done && pending?.type === "OWNER_SETUP") {
+        await clearPending(threadId);
+      }
       if (pending && pending.type === "OWNER_SETUP") {
         if (!ownerJid) {
           await setOwner(sender);
@@ -301,6 +372,15 @@ export async function initWhatsApp(): Promise<WASocket> {
       const decision = parseConfirmation(text);
       if (pending && decision) {
         await handlePendingDecision(socket, from, threadId, pending, decision);
+        continue;
+      }
+      if (owner?.setup_done && isPostSetupHelpRequest(text)) {
+        const help = [
+          "Boa, aqui vao alguns exemplos pra te guiar:",
+          buildPostSetupHelp(),
+          "Quer que eu ja configure algo pra voce?",
+        ].join("\n");
+        await sendAndLog(socket, from, threadId, help);
         continue;
       }
       const deleteHandled = await maybeHandleEmailDeleteRequest(socket, from, threadId, text);
@@ -1613,7 +1693,27 @@ async function handlePendingDecision(
   socket: WASocket,
   to: string,
   threadId: string,
-  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "EMAIL_CONNECT_FLOW"; provider: "gmail" | "icloud"; stage: "await_email" | "await_password"; email?: string } | { type: "EMAIL_DELETE_SUGGEST"; items: Array<{ id: number; sender: string }> } | { type: "EMAIL_DELETE_CONFIRM"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "EMAIL_DELETE_PICK"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "OWNER_SETUP"; stage: "await_name" | "await_role" | "await_api_key" | "await_tone" | "await_timezone" | "await_language" | "await_goals" } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
+  pending:
+    | { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> }
+    | { type: "RUN_UPDATE" }
+    | { type: "EMAIL_CONNECT_FLOW"; provider: "gmail" | "icloud"; stage: "await_email" | "await_password"; email?: string }
+    | { type: "EMAIL_DELETE_SUGGEST"; items: Array<{ id: number; sender: string }> }
+    | { type: "EMAIL_DELETE_CONFIRM"; items: Array<{ id: number; sender: string; subject: string }> }
+    | { type: "EMAIL_DELETE_PICK"; items: Array<{ id: number; sender: string; subject: string }> }
+    | {
+        type: "OWNER_SETUP";
+        stage:
+          | "await_api_key"
+          | "ask_name"
+          | "ask_context"
+          | "ask_style"
+          | "ask_location"
+          | "ask_timezone"
+          | "ask_language"
+          | "ask_goal"
+          | "confirm_summary";
+      }
+    | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
   decision: "confirm" | "cancel",
 ): Promise<void> {
   if (decision === "cancel") {
@@ -2024,49 +2124,24 @@ async function handleOwnerSetup(
   socket: WASocket,
   to: string,
   threadId: string,
-  pending: { type: "OWNER_SETUP"; stage: "await_name" | "await_role" | "await_api_key" | "await_tone" | "await_timezone" | "await_language" | "await_goals" },
+  pending: {
+    type: "OWNER_SETUP";
+    stage:
+      | "await_api_key"
+      | "ask_name"
+      | "ask_context"
+      | "ask_style"
+      | "ask_location"
+      | "ask_timezone"
+      | "ask_language"
+      | "ask_goal"
+      | "confirm_summary";
+  },
   text: string,
 ): Promise<boolean> {
   const value = text.trim();
   if (!value) return false;
-
-  if (pending.stage === "await_name") {
-    const ai = await interpretOnboardingAnswer("name", value).catch(() => null);
-    const nameValue = ai?.value?.trim() || value;
-    await updateOwnerDetails({ owner_name: nameValue });
-    await addMemoryItem("user_fact", `nome do usuario: ${nameValue}`);
-    await setPending(threadId, {
-      type: "OWNER_SETUP",
-      stage: "await_role",
-      createdAt: new Date().toISOString(),
-    });
-    await sendAndLog(
-      socket,
-      to,
-      threadId,
-      "Boa. Me conta um pouco sobre voce: no que voce trabalha ou com o que voce mais lida no dia a dia?",
-    );
-    return true;
-  }
-
-  if (pending.stage === "await_role") {
-    const ai = await interpretOnboardingAnswer("role", value).catch(() => null);
-    const roleValue = ai?.value?.trim() || value;
-    await updateOwnerDetails({ owner_role: roleValue });
-    await addMemoryItem("user_fact", `trabalho/area: ${roleValue}`);
-    await setPending(threadId, {
-      type: "OWNER_SETUP",
-      stage: "await_tone",
-      createdAt: new Date().toISOString(),
-    });
-    await sendAndLog(
-      socket,
-      to,
-      threadId,
-      "Pra eu me adaptar melhor: prefere respostas mais curtas ou detalhadas? E um tom mais formal ou casual?",
-    );
-    return true;
-  }
+  const owner = await getOwnerState();
 
   if (pending.stage === "await_api_key") {
     if (!value.startsWith("xai-")) {
@@ -2083,120 +2158,213 @@ async function handleOwnerSetup(
     await addMemoryItem("decision", "Grok configurado como modelo principal");
     await setPending(threadId, {
       type: "OWNER_SETUP",
-      stage: "await_name",
+      stage: "ask_name",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(socket, to, threadId, "Boa. Como posso te chamar?");
+    await sendAndLog(socket, to, threadId, "Boa! Como voce prefere que eu te chame?");
     return true;
   }
 
-  if (pending.stage === "await_tone") {
+  if (pending.stage === "ask_name") {
+    const ai = await interpretOnboardingAnswer("name", value).catch(() => null);
+    const nameValue = ai?.value?.trim() || value;
+    await updateOwnerDetails({ owner_name: nameValue });
+    await addMemoryItem("user_fact", `nome preferido: ${nameValue}`);
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "ask_context",
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "Boa. No seu dia a dia, voce trabalha com o que? ou o que voce mais faz?",
+    );
+    return true;
+  }
+
+  if (pending.stage === "ask_context") {
+    const ai = await interpretOnboardingAnswer("role", value).catch(() => null);
+    const roleValue = ai?.value?.trim() || value;
+    await updateOwnerDetails({ owner_role: roleValue });
+    await addMemoryItem("user_fact", `contexto/rotina: ${roleValue}`);
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "ask_style",
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "Voce curte respostas mais diretas ou mais explicadinhas? E prefere que eu fale mais como amigo mesmo?",
+    );
+    return true;
+  }
+
+  if (pending.stage === "ask_style") {
     const normalized = value.toLowerCase();
     const ai = await interpretOnboardingAnswer("tone", value).catch(() => null);
     const verbosity = ai?.verbosity;
     const formality = ai?.formality;
     if (verbosity) {
       await setBehaviorProfile({ verbosity });
-      if (verbosity === "short") {
-        await addMemoryItem("user_fact", "prefere respostas curtas");
-      } else if (verbosity === "long") {
-        await addMemoryItem("user_fact", "prefere respostas longas");
-      }
+      await updateOwnerDetails({ response_detail: verbosity });
+      await addMemoryItem("user_fact", `nivel de detalhe: ${verbosity}`);
     }
     if (formality) {
       await setBehaviorProfile({ formality, emoji_level: formality === "casual" ? 0.1 : 0 });
-      await addMemoryItem(
-        "user_fact",
-        formality === "formal" ? "prefere tom formal" : "prefere tom casual",
-      );
+      await updateOwnerDetails({ tone: formality });
+      await addMemoryItem("user_fact", `tom preferido: ${formality}`);
     }
-    if (normalized.includes("curto")) {
-      await setBehaviorProfile({ verbosity: "short" });
-      await addMemoryItem("user_fact", "prefere respostas curtas");
-    } else if (normalized.includes("longo")) {
-      await setBehaviorProfile({ verbosity: "long" });
-      await addMemoryItem("user_fact", "prefere respostas longas");
-    } else {
-      await setBehaviorProfile({ verbosity: "medium" });
-    }
-
-    if (normalized.includes("formal")) {
-      await setBehaviorProfile({ formality: "formal", emoji_level: 0 });
-      await addMemoryItem("user_fact", "prefere tom formal");
-    } else if (normalized.includes("casual")) {
+    if (normalized.includes("amigo")) {
       await setBehaviorProfile({ formality: "casual", emoji_level: 0.1 });
-      await addMemoryItem("user_fact", "prefere tom casual");
+      await updateOwnerDetails({ tone: "amigo" });
+      await addMemoryItem("user_fact", "tom preferido: amigo");
     }
-
+    if (!verbosity) {
+      await updateOwnerDetails({ response_detail: "medium" });
+    }
     await setPending(threadId, {
       type: "OWNER_SETUP",
-      stage: "await_timezone",
+      stage: "ask_location",
       createdAt: new Date().toISOString(),
     });
     await sendAndLog(
       socket,
       to,
       threadId,
-      "Show. Qual seu fuso horario? (ex: Europe/London ou Sao Paulo)",
+      "E voce ta em qual cidade hoje? (e pais, se puder)",
     );
     return true;
   }
 
-  if (pending.stage === "await_timezone") {
+  if (pending.stage === "ask_location") {
+    const location = parseLocation(value);
+    await updateOwnerDetails({ city: location.city, country: location.country });
+    await addMemoryItem("user_fact", `cidade: ${location.city}`);
+    if (location.country) {
+      await addMemoryItem("user_fact", `pais: ${location.country}`);
+    }
+    const inferred = inferTimezoneFromLocation(location.city, location.country);
+    if (inferred) {
+      try {
+        await setTimezone(inferred);
+        await updateOwnerDetails({ timezone: inferred });
+        await addMemoryItem("user_fact", `fuso horario: ${inferred}`);
+      } catch {
+        // ignore
+      }
+      await setPending(threadId, {
+        type: "OWNER_SETUP",
+        stage: "ask_language",
+        createdAt: new Date().toISOString(),
+      });
+      await sendAndLog(socket, to, threadId, "E no dia a dia, prefere falar em portugues ou ingles?");
+      return true;
+    }
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "ask_timezone",
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "So pra eu acertar seus horarios certinho: seu horario e o de Londres mesmo? (ex: Europe/London)",
+    );
+    return true;
+  }
+
+  if (pending.stage === "ask_timezone") {
     const ai = await interpretOnboardingAnswer("timezone", value).catch(() => null);
     const tz = ai?.timezone ?? normalizeTimezoneInput(value) ?? value;
     try {
       await setTimezone(tz);
+      await updateOwnerDetails({ timezone: tz });
+      await addMemoryItem("user_fact", `fuso horario: ${tz}`);
     } catch {
       await sendAndLog(
         socket,
         to,
         threadId,
-        "Esse fuso nao parece valido. Ex: Europe/London, Europe/Lisbon, America/Sao_Paulo.",
+        "Nao consegui identificar seu horario. Ex: Europe/London ou America/Sao_Paulo.",
       );
       return true;
     }
-    await addMemoryItem("user_fact", `fuso horario: ${tz}`);
     await setPending(threadId, {
       type: "OWNER_SETUP",
-      stage: "await_language",
+      stage: "ask_language",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(socket, to, threadId, "Qual idioma voce prefere no dia a dia?");
+    await sendAndLog(socket, to, threadId, "E no dia a dia, prefere falar em portugues ou ingles?");
     return true;
   }
 
-  if (pending.stage === "await_language") {
+  if (pending.stage === "ask_language") {
     const ai = await interpretOnboardingAnswer("language", value).catch(() => null);
     const langValue = ai?.language ?? ai?.value ?? value;
+    await updateOwnerDetails({ language: langValue });
     await addMemoryItem("user_fact", `idioma preferido: ${langValue}`);
     await setPending(threadId, {
       type: "OWNER_SETUP",
-      stage: "await_goals",
+      stage: "ask_goal",
       createdAt: new Date().toISOString(),
     });
     await sendAndLog(
       socket,
       to,
       threadId,
-      "Pra eu te ajudar melhor: o que voce quer que eu resolva no dia a dia?",
+      "Na pratica, como voce quer que eu te ajude no dia a dia?",
     );
     return true;
   }
 
-  if (pending.stage === "await_goals") {
+  if (pending.stage === "ask_goal") {
     const ai = await interpretOnboardingAnswer("goals", value).catch(() => null);
     const goalValue = ai?.value ?? value;
-    await addMemoryItem("user_fact", `objetivos: ${goalValue}`);
-    await clearPending(threadId);
-    const owner = await getOwnerState();
-    const name = owner?.owner_name ?? "por aqui";
-    const greeting = [
-      `Perfeito, ${name}.`,
-      "Setup finalizado. Agora eu cuido do resto pra voce.",
-      "Se quiser, posso te mostrar os primeiros comandos ou ja resolver algo agora.",
-    ].join("\n");
-    await sendAndLog(socket, to, threadId, greeting);
+    await updateOwnerDetails({ goal: goalValue });
+    await addMemoryItem("user_fact", `objetivo: ${goalValue}`);
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "confirm_summary",
+      createdAt: new Date().toISOString(),
+    });
+    const summary = buildOnboardingSummary(await getOwnerState());
+    await sendAndLog(socket, to, threadId, `${summary}\nAcertei?`);
+    return true;
+  }
+
+  if (pending.stage === "confirm_summary") {
+    const decision = parseConfirmation(value);
+    if (decision === "confirm") {
+      await updateOwnerDetails({ setup_done: true });
+      await clearPending(threadId);
+      const freshOwner = await getOwnerState();
+      const name = freshOwner?.owner_name ?? "por aqui";
+      await sendAndLog(socket, to, threadId, buildPostSetupIntro(name));
+      return true;
+    }
+    const lower = value.toLowerCase();
+    let nextStage: "ask_name" | "ask_language" | "ask_style" | "ask_goal" | "ask_location" =
+      "ask_location";
+    if (lower.includes("nome")) nextStage = "ask_name";
+    else if (lower.includes("idioma")) nextStage = "ask_language";
+    else if (lower.includes("tom") || lower.includes("jeito")) nextStage = "ask_style";
+    else if (lower.includes("objetivo")) nextStage = "ask_goal";
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: nextStage,
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "Beleza. Me diz o que voce quer ajustar primeiro.",
+    );
     return true;
   }
 

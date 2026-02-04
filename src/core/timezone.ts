@@ -25,6 +25,9 @@ export function normalizeTimezoneInput(value: string): string | null {
   const mapping: Record<string, string> = {
     londres: "Europe/London",
     london: "Europe/London",
+    glasgow: "Europe/London",
+    manchester: "Europe/London",
+    birmingham: "Europe/London",
     lisboa: "Europe/Lisbon",
     lisbon: "Europe/Lisbon",
     portugal: "Europe/Lisbon",
@@ -34,6 +37,7 @@ export function normalizeTimezoneInput(value: string): string | null {
     "são paulo": "America/Sao_Paulo",
     brasilia: "America/Sao_Paulo",
     "rio de janeiro": "America/Sao_Paulo",
+    brasil: "America/Sao_Paulo",
   };
   for (const [key, tz] of Object.entries(mapping)) {
     if (normalized.includes(key)) {
@@ -42,6 +46,15 @@ export function normalizeTimezoneInput(value: string): string | null {
   }
   if (raw.includes("/")) return raw;
   return null;
+}
+
+export function inferTimezoneFromLocation(
+  city?: string,
+  country?: string,
+): string | null {
+  const inputs = [city, country].filter(Boolean).join(" ").toLowerCase();
+  if (!inputs) return null;
+  return normalizeTimezoneInput(inputs);
 }
 
 export async function getTimezone(): Promise<string> {
