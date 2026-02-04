@@ -39,6 +39,9 @@ import { clearPending, getPending, setPending } from "../core/pendingActions";
 import { loadEmailConfig } from "../core/emailStore";
 import { consumeUpdatePending, markUpdatePending } from "../core/updateStatus";
 import { addEmailRule, extractEmailDomain } from "../core/emailRules";
+import { applyFeedback, formatReply, getBehaviorProfile, touchEmotionState } from "../core/behavior";
+import { recordInteraction, getInteractionState, markCheckinSent } from "../core/interaction";
+import { updatePreferencesFromMessage } from "../core/preferences";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -150,6 +153,14 @@ export async function initWhatsApp(): Promise<WASocket> {
           continue;
         }
       }
+      await recordInteraction(threadId, from);
+      await updatePreferencesFromMessage(text).catch(() => undefined);
+      await touchEmotionState().catch(() => undefined);
+      const feedbackProfile = await applyFeedback(text);
+      if (feedbackProfile) {
+        await sendAndLog(socket, from, threadId, "Fechado. Vou ajustar meu jeito de responder.");
+        continue;
+      }
       if (pending && decision) {
         await handlePendingDecision(socket, from, threadId, pending, decision);
         continue;
@@ -197,6 +208,23 @@ export async function initWhatsApp(): Promise<WASocket> {
       direction: "out",
       text: `⏰ Lembrete: ${messageText}`,
     });
+  });
+
+  registerCronHandler("interaction_checkin", async () => {
+    const state = await getInteractionState();
+    const lastJid = state.lastJid;
+    if (!lastJid) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (state.lastSentDate == today) return;
+    const messages = [
+      "E ai, tudo certo por ai?",
+      "Passando so pra ver se ta tudo ok.",
+      "Se precisar de algo, to por aqui.",
+      "Como foi o dia ate agora?",
+    ];
+    const pick = messages[Math.floor(Math.random() * messages.length)];
+    await socket.sendMessage(lastJid, { text: pick });
+    await markCheckinSent();
   });
 
   registerCronHandler("email_monitor", async (job) => {
@@ -985,7 +1013,9 @@ async function handleBrain(
           createdAt: new Date().toISOString(),
         });
       }
-      await sendAndLog(socket, to, threadId, cleanup ? cleanup.text : outcome.output);
+      const behavior = await getBehaviorProfile();
+      const formatted = formatReply(cleanup ? cleanup.text : outcome.output, behavior);
+      await sendAndLog(socket, to, threadId, formatted);
       return;
     }
 
@@ -1006,13 +1036,15 @@ async function sendAndLog(
   threadId: string,
   text: string,
 ): Promise<void> {
-  await socket.sendMessage(to, { text });
+  const behavior = await getBehaviorProfile();
+  const formattedText = formatReply(text, behavior);
+  await socket.sendMessage(to, { text: formattedText });
   await appendConversation({
     ts: new Date().toISOString(),
     from: "Tur",
     thread: threadId,
     direction: "out",
-    text,
+    text: formattedText,
   });
 
   await maybeDigest(threadId);
@@ -1314,7 +1346,9 @@ async function handlePendingDecision(
   }
   const outcome = await skill.execute(pending.args ?? {}, { platform: process.platform });
   await clearPending(threadId);
-  await sendAndLog(socket, to, threadId, outcome.output);
+  const behavior = await getBehaviorProfile();
+  const formatted = formatReply(outcome.output, behavior);
+  await sendAndLog(socket, to, threadId, formatted);
 }
 
 function normalizeEmailArgs(

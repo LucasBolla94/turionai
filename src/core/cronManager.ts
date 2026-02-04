@@ -95,6 +95,18 @@ export async function initCronManager(): Promise<void> {
     jobs.push(job);
     await saveState(jobs);
   }
+  if (!jobs.find((job) => job.name === "interaction_checkin_default")) {
+    const job: CronJob = {
+      name: "interaction_checkin_default",
+      schedule: "30 9,14,19 * * *",
+      jobType: "interaction_checkin",
+      payload: "",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    };
+    jobs.push(job);
+    await saveState(jobs);
+  }
   for (const job of jobs) {
     if (!job.enabled) continue;
     const task = buildTask(job);
