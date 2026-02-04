@@ -49,6 +49,8 @@ import { ensurePairingCode, getOwnerState, setOwner, updateOwnerDetails } from "
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
 const SEEN_TTL_MS = 5 * 60 * 1000;
+let lastQr: string | null = null;
+let lastQrAt = 0;
 
 function markSeen(id: string): void {
   const now = Date.now();
@@ -96,14 +98,20 @@ export async function initWhatsApp(): Promise<WASocket> {
         const code = await ensurePairingCode();
         console.log(`[Tur] Codigo de pareamento: ${code}`);
       }
-      console.log("[Tur] Novo QR Code gerado. Use imediatamente.");
-      const qrText = await qrcode.toString(qr, { type: "terminal" });
-      console.log(qrText);
-      console.log("[Tur] Escaneie o QR Code acima com o WhatsApp.");
+      if (qr !== lastQr) {
+        lastQr = qr;
+        lastQrAt = Date.now();
+        console.log("[Tur] Novo QR Code gerado. Use imediatamente.");
+        const qrText = await qrcode.toString(qr, { type: "terminal" });
+        console.log(qrText);
+        console.log("[Tur] Escaneie o QR Code acima com o WhatsApp.");
+      }
     }
 
     if (connection === "open") {
       console.log("[Turion] WhatsApp conectado.");
+      lastQr = null;
+      lastQrAt = 0;
       const pendingUpdate = await consumeUpdatePending();
       if (pendingUpdate?.to) {
         await socket.sendMessage(pendingUpdate.to, {
@@ -121,6 +129,9 @@ export async function initWhatsApp(): Promise<WASocket> {
         statusCode,
         shouldReconnect,
       });
+      if (lastQr && Date.now() - lastQrAt > 2 * 60 * 1000) {
+        lastQr = null;
+      }
 
       if (shouldReconnect) {
         await initWhatsApp();
