@@ -40,6 +40,9 @@ install_compose_plugin() {
   if docker compose version >/dev/null 2>&1; then
     return 0
   fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    return 0
+  fi
 
   if command -v apt-get >/dev/null 2>&1; then
     # Ensure Docker repo is configured (compose plugin may not exist in default repos)
@@ -89,10 +92,12 @@ install_compose_plugin() {
 run_compose() {
   if command -v docker-compose >/dev/null 2>&1; then
     COMPOSE_BIN="$(command -v docker-compose)"
+    echo "[Tur] Usando: $COMPOSE_BIN"
     "$COMPOSE_BIN" "$@"
     return
   fi
   if docker compose version >/dev/null 2>&1; then
+    echo "[Tur] Usando: docker compose"
     docker compose "$@"
     return
   fi
