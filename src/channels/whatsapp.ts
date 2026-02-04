@@ -53,6 +53,8 @@ let lastQr: string | null = null;
 let lastQrAt = 0;
 let isInitializing = false;
 let activeSocket: WASocket | null = null;
+let qrTimer: ReturnType<typeof setTimeout> | null = null;
+let lastQrResetAt = 0;
 
 function markSeen(id: string): void {
   const now = Date.now();
@@ -115,6 +117,16 @@ export async function initWhatsApp(): Promise<WASocket> {
         const qrText = await qrcode.toString(qr, { type: "terminal" });
         console.log(qrText);
         console.log("[Tur] Escaneie o QR Code acima com o WhatsApp.");
+        if (qrTimer) clearTimeout(qrTimer);
+        qrTimer = setTimeout(async () => {
+          const elapsed = Date.now() - lastQrAt;
+          if (elapsed < 55 * 1000) return;
+          if (Date.now() - lastQrResetAt < 60 * 1000) return;
+          lastQrResetAt = Date.now();
+          console.warn("[Turion] QR expirou. Gerando um novo...");
+          await resetAuthState();
+          void initWhatsApp();
+        }, 60 * 1000);
       }
     }
 
@@ -122,6 +134,10 @@ export async function initWhatsApp(): Promise<WASocket> {
       console.log("[Turion] WhatsApp conectado.");
       lastQr = null;
       lastQrAt = 0;
+      if (qrTimer) {
+        clearTimeout(qrTimer);
+        qrTimer = null;
+      }
       const pendingUpdate = await consumeUpdatePending();
       if (pendingUpdate?.to) {
         await socket.sendMessage(pendingUpdate.to, {
@@ -148,6 +164,10 @@ export async function initWhatsApp(): Promise<WASocket> {
       });
       if (lastQr && Date.now() - lastQrAt > 2 * 60 * 1000) {
         lastQr = null;
+      }
+      if (qrTimer) {
+        clearTimeout(qrTimer);
+        qrTimer = null;
       }
 
       if (shouldResetAuth) {
