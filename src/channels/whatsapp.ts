@@ -73,7 +73,7 @@ export async function initWhatsApp(): Promise<WASocket> {
         continue;
       }
       if (!authorized) {
-        console.warn(`[Turion] msg bloqueada de ${sender}`);
+        console.warn(`[Turion] msg bloqueada`, { sender, from });
         continue;
       }
       const result = classifyMessage({

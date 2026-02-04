@@ -1,4 +1,4 @@
-const DEFAULT_ALLOWLIST = ["+447432009032"];
+const DEFAULT_ALLOWLIST = ["447432009032"];
 
 function normalizeDigits(value: string): string {
   return value.replace(/[^\d]/g, "");
@@ -28,6 +28,12 @@ export function isAuthorized(jid: string | undefined): boolean {
 
   const digits = normalizeDigits(normalizedJid);
   if (digits && allowlist.has(digits)) return true;
+  // Some JIDs embed the phone digits (e.g. 4474...@s.whatsapp.net)
+  if (digits) {
+    for (const entry of allowlist) {
+      if (entry && digits.includes(entry)) return true;
+    }
+  }
 
   return false;
 }
