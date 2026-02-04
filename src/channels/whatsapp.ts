@@ -15,6 +15,24 @@ import { listScripts, runScript } from "../executor/executor";
 import os from "node:os";
 
 const authDir = resolve("state", "baileys");
+const seenMessages = new Map<string, number>();
+const SEEN_TTL_MS = 5 * 60 * 1000;
+
+function markSeen(id: string): void {
+  const now = Date.now();
+  seenMessages.set(id, now);
+  for (const [key, ts] of seenMessages) {
+    if (now - ts > SEEN_TTL_MS) {
+      seenMessages.delete(key);
+    }
+  }
+}
+
+function alreadySeen(id: string): boolean {
+  const ts = seenMessages.get(id);
+  if (!ts) return false;
+  return Date.now() - ts <= SEEN_TTL_MS;
+}
 
 export async function initWhatsApp(): Promise<WASocket> {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -61,9 +79,19 @@ export async function initWhatsApp(): Promise<WASocket> {
   });
 
   socket.ev.on("messages.upsert", (event) => {
+    if (event.type !== "notify") {
+      return;
+    }
     for (const message of event.messages) {
       if (message.key.fromMe) {
         continue;
+      }
+      const messageId = message.key.id;
+      if (messageId) {
+        if (alreadySeen(messageId)) {
+          continue;
+        }
+        markSeen(messageId);
       }
       const from = message.key.remoteJid ?? "unknown";
       const sender = message.key.participant ?? message.key.remoteJid ?? "unknown";
