@@ -643,6 +643,52 @@ async function handleBrain(
       return;
     }
 
+    if (parseGitStatusRequest(text)) {
+      const gitStatusScript =
+        process.platform === "win32" ? "git_status.ps1" : "git_status.sh";
+      let status = "";
+      try {
+        status = await runScript(gitStatusScript);
+      } catch {
+        status = "";
+      }
+      if (status.startsWith("CONNECTED")) {
+        const url = status.replace("CONNECTED", "").trim();
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          `Sim, estou conectado no seu Git: ${url}. Quer que eu verifique atualizações?`,
+        );
+        return;
+      }
+      if (status.includes("NOT_A_GIT_REPO")) {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Ainda não estou conectado a nenhum repositório aqui. Quer que eu configure o Git?",
+        );
+        return;
+      }
+      if (status.includes("GIT_NOT_FOUND")) {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Git não está instalado no ambiente. Posso instalar e configurar se você quiser.",
+        );
+        return;
+      }
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Não consegui confirmar o Git agora, mas posso tentar novamente quando você quiser.",
+      );
+      return;
+    }
+
     const [memoryContext, recent, digest, timezone] = await Promise.all([
       buildMemoryContext(text),
       readRecentConversation(threadId, 5),
@@ -889,6 +935,19 @@ function parseUpdateRequest(text: string): boolean {
     normalized.includes("agente") ||
     normalized.includes("modelo");
   return hasUpdate && (hasTarget || normalized.length < 20);
+}
+
+function parseGitStatusRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  const hasGit = normalized.includes("git") || normalized.includes("github");
+  const hasConnect =
+    normalized.includes("conectado") ||
+    normalized.includes("conectada") ||
+    normalized.includes("conexao") ||
+    normalized.includes("conexão") ||
+    normalized.includes("conectar");
+  return hasGit && hasConnect;
 }
 
 async function executeUpdate(
