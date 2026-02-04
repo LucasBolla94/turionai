@@ -1,4 +1,4 @@
-import { getSkillByName } from "../skills/registry";
+import { findSkillByIntent, getSkillByName } from "../skills/registry";
 import { SkillContext } from "../skills/types";
 import { appendAudit } from "./auditLog";
 
@@ -10,7 +10,7 @@ export interface PlanStep {
 export async function runPlan(steps: PlanStep[], ctx: SkillContext): Promise<string[]> {
   const outputs: string[] = [];
   for (const step of steps) {
-    const skill = getSkillByName(step.skill);
+    const skill = getSkillByName(step.skill) ?? findSkillByIntent(step.skill);
     if (!skill) {
       outputs.push(`Skill não encontrada: ${step.skill}`);
       await appendAudit({
