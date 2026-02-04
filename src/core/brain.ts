@@ -58,6 +58,13 @@ export interface BrainResult {
   }>;
 }
 
+export interface DiagnoseResult {
+  summary: string;
+  probable_cause: string;
+  safe_next_steps: Array<{ skill: string; args: Record<string, string | number> }>;
+  needs_confirmation: boolean;
+}
+
 function extractJson(text: string): BrainResult | null {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
@@ -89,4 +96,19 @@ export async function interpretStrictJson(input: string): Promise<BrainResult | 
 
   const content = await callXai(system, input);
   return extractJson(content);
+}
+
+export async function diagnoseLogs(input: string): Promise<DiagnoseResult | null> {
+  const system = [
+    "Você é Tur, assistente DevOps.",
+    "Receberá logs curtos e deve responder APENAS JSON válido.",
+    "Chaves obrigatórias: summary, probable_cause, safe_next_steps, needs_confirmation.",
+    "summary: string curta.",
+    "probable_cause: string curta.",
+    "safe_next_steps: array de objetos {skill, args}.",
+    "needs_confirmation: boolean.",
+  ].join(" ");
+
+  const content = await callXai(system, input);
+  return extractJson(content) as DiagnoseResult | null;
 }

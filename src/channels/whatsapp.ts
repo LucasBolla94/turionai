@@ -14,7 +14,7 @@ import { classifyMessage } from "../core/messagePipeline";
 import { listScripts, runScript } from "../executor/executor";
 import { createCron, listCrons, pauseCron, removeCron } from "../core/cronManager";
 import os from "node:os";
-import { interpretStrictJson } from "../core/brain";
+import { diagnoseLogs, interpretStrictJson } from "../core/brain";
 import { executeActions } from "../core/actionExecutor";
 import { getProject, upsertProject } from "../core/projectRegistry";
 
@@ -146,6 +146,8 @@ async function handleCommand(
 
   const deployScript =
     process.platform === "win32" ? "deploy_compose.ps1" : "deploy_compose.sh";
+  const logsScript =
+    process.platform === "win32" ? "logs_compose.ps1" : "logs_compose.sh";
 
   if (cmd === "status") {
     const uptimeSec = Math.floor(process.uptime());
@@ -313,7 +315,71 @@ async function handleCommand(
     return;
   }
 
+  if (cmd === "logs") {
+    const name = args[0];
+    const lines = args[1] ?? "200";
+    if (!name) {
+      await socket.sendMessage(to, { text: "Uso: logs <name> [lines]" });
+      return;
+    }
+    try {
+      const output = await runScript(logsScript, [name, lines]);
+      await socket.sendMessage(to, { text: truncateLogs(output) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao buscar logs.";
+      await socket.sendMessage(to, { text: `Erro: ${message}` });
+    }
+    return;
+  }
+
+  if (cmd === "diagnose") {
+    const name = args[0];
+    const lines = args[1] ?? "200";
+    if (!name) {
+      await socket.sendMessage(to, { text: "Uso: diagnose <name> [lines]" });
+      return;
+    }
+    try {
+      const output = await runScript(logsScript, [name, lines]);
+      const trimmed = truncateLogs(output);
+      const result = await diagnoseLogs(trimmed);
+      if (!result) {
+        await socket.sendMessage(to, { text: "Diagnóstico indisponível." });
+        return;
+      }
+      const response = [
+        `Resumo: ${result.summary}`,
+        `Causa provável: ${result.probable_cause}`,
+        `Precisa confirmação: ${result.needs_confirmation}`,
+        `Próximos passos: ${result.safe_next_steps
+          .map((s) => `${s.skill} ${JSON.stringify(s.args)}`)
+          .join("; ")}`,
+      ].join("\n");
+      await socket.sendMessage(to, { text: response });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha no diagnóstico.";
+      await socket.sendMessage(to, { text: `Erro: ${message}` });
+    }
+    return;
+  }
+
   await socket.sendMessage(to, { text: "Comando não reconhecido." });
+}
+
+function truncateLogs(input: string): string {
+  const maxChars = 20_000;
+  const lines = input.split(/\r?\n/);
+  const deduped: string[] = [];
+  let last = "";
+  for (const line of lines) {
+    if (line === last) continue;
+    deduped.push(line);
+    last = line;
+  }
+  const joined = deduped.join("\n");
+  if (joined.length <= maxChars) return joined;
+  return `${joined.slice(0, maxChars)}\n...[truncado]`;
 }
 
 async function handleBrain(socket: WASocket, to: string, text: string): Promise<void> {

@@ -313,7 +313,7 @@ Resultado esperado
 ✅ Respostas melhores sem risco
 ✅ Conversas gravadas para memória e token saver
 
-FASE 9 — Deploy simples de projetos (MVP) + “Project Registry” (economia real) ✅
+### FASE 9 — Deploy simples de projetos (MVP) + “Project Registry” (economia real) ✅
 Objetivo
 Fazer deploy real (como antes), mas agora com:
 
@@ -375,7 +375,7 @@ Resultado esperado
 ✅ Guarda dados do projeto (economiza tokens)
 ✅ Fluxo mais “OpenClaw-like”
 
-FASE 10 — Logs e diagnóstico (melhorado com Grok) + Limites de tokens
+FASE 10 — Logs e diagnóstico (melhorado com Grok) + Limites de tokens ✅
 Objetivo
 Manter a skill de logs, mas melhorar com Grok:
 

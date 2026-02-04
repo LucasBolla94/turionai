@@ -128,6 +128,16 @@ Comandos:
 Registry:
 - `state/memory/projects.json`
 
+## Fase 10 (Logs + Diagnose com Grok)
+
+Comandos:
+- `logs <name> [lines]`
+- `diagnose <name> [lines]`
+
+Limites:
+- logs truncados em ~20KB
+- dedupe de linhas repetidas
+
 Ações permitidas (executadas com segurança):
 - `create_dir` (somente dentro do workspace)
 - `write_file` (somente dentro do workspace)
