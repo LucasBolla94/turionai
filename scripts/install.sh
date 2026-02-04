@@ -163,14 +163,12 @@ step "Preparando diretorio de instalacao"
 sudo mkdir -p "$INSTALL_DIR"
 sudo chown -R "$USER":"$USER" "$INSTALL_DIR"
 
-if [ -d "$APP_DIR/.git" ]; then
-  step "Repositorio ja existe. Atualizando"
-  git -C "$APP_DIR" fetch -q origin main
-  git -C "$APP_DIR" merge --ff-only -q origin/main
-else
-  step "Clonando repositorio"
-  git clone --quiet "$REPO_URL" "$APP_DIR"
+if [ -d "$APP_DIR" ]; then
+  step "Repositorio encontrado. Limpando para reinstalar do zero"
+  sudo rm -rf "$APP_DIR"
 fi
+step "Clonando repositorio"
+git clone --quiet "$REPO_URL" "$APP_DIR"
 
 cd "$APP_DIR"
 
