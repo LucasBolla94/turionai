@@ -106,7 +106,7 @@ Conectar no WhatsApp e **provar que mensagens chegam no servidor**.
 
 ---
 
-## FASE 3 — Filtro de segurança (quem pode falar com o Turion)
+## FASE 3 — Filtro de segurança (quem pode falar com o Turion) ✅
 
 ### Objetivo
 Garantir que **só números autorizados** possam interagir.

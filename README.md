@@ -35,3 +35,16 @@ Para ver logs do container:
 ```bash
 docker compose logs -f
 ```
+
+## Fase 3 (Allowlist)
+
+Por padrão, apenas números na allowlist podem interagir.
+
+Número padrão:
+- +447432009032
+
+Para sobrescrever, use variável de ambiente:
+
+```bash
+TURION_ALLOWLIST="+447432009032,+5511999999999" npm run dev
+```

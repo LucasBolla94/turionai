@@ -9,6 +9,7 @@ import { Boom } from "@hapi/boom";
 import qrcode from "qrcode";
 import pino from "pino";
 import { resolve } from "node:path";
+import { isAuthorized } from "../config/allowlist";
 
 const authDir = resolve("state", "baileys");
 
@@ -59,10 +60,16 @@ export async function initWhatsApp(): Promise<WASocket> {
   socket.ev.on("messages.upsert", (event) => {
     for (const message of event.messages) {
       const from = message.key.remoteJid ?? "unknown";
+      const sender = message.key.participant ?? message.key.remoteJid ?? "unknown";
+      const authorized = isAuthorized(sender);
       const text =
         message.message?.conversation ??
         message.message?.extendedTextMessage?.text ??
         "";
+      if (!authorized) {
+        console.warn(`[Turion] msg bloqueada de ${sender}`);
+        continue;
+      }
       console.log(`[Turion] msg de ${from}: ${text}`);
     }
   });
