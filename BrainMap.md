@@ -159,3 +159,20 @@ Tur é um assistente pessoal humano, seguro e auditável, com:
 - Memória persistente
 - Onboarding amigável
 - Atualizações automáticas
+
+## 9) Ajustes recentes (cron/lembretes)
+Arquivos:
+- src/skills/cronSkill.ts
+- src/channels/whatsapp.ts
+
+O que foi ajustado:
+- Para CRON_CREATE de lembretes, o bot nao envia o result.reply do brain para evitar respostas duplicadas.
+- A resposta final vem do CronSkill com texto simples:
+  "Deu tudo certo por aqui. Vou te lembrar em {tempo}, fica tranquilo."
+- Em caso de erro na criacao do cron, o CronSkill retorna a mensagem com o log do erro (temporario para debug):
+  "Erro ao criar o lembrete: <mensagem>\nLog: <stack ou mensagem>"
+
+Como funciona:
+- O CronSkill recebe schedule (ISO-8601 ou cron).
+- Se for ISO-8601, calcula o tempo relativo (minutos/horas/dias) para montar {tempo}.
+- Se nao for ISO, usa "no horario combinado".

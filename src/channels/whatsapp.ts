@@ -488,7 +488,7 @@ export async function initWhatsApp(): Promise<WASocket> {
 
   registerCronHandler("reminder", async (job) => {
     const payload = safeJson<{ to?: string; message?: string }>(job.payload);
-    const messageText = payload?.message ?? "Lembrete";
+    const messageText = payload?.message ? payload.message : "Lembrete";
     const to = payload?.to ?? "";
     if (!to) return;
     await socket.sendMessage(to, { text: `⏰ Lembrete: ${messageText}` });
@@ -1291,10 +1291,12 @@ async function handleBrain(
       await sendAndLog(socket, to, threadId, "IA sem resposta válida.");
       return;
     }
-    if (result.reply) {
+    const skipReply =
+      result.action === "RUN_SKILL" && result.intent === "CRON_CREATE";
+    if (result.reply && !skipReply) {
       const structured = enforceResponseStructure(result.reply);
       await sendAndLog(socket, to, threadId, structured);
-    } else {
+    } else if (!result.reply && !skipReply) {
       const responseLines = [
         `Intent: ${result.intent}`,
         `Args: ${JSON.stringify(result.args)}`,
@@ -1352,12 +1354,21 @@ async function handleBrain(
         const args = result.args ?? {};
         const jobType = typeof args.jobType === "string" ? args.jobType : "";
         if (jobType === "reminder") {
-          const message =
-            typeof args.message === "string"
-              ? args.message
-              : typeof args.payload === "string"
-                ? args.payload
-                : "";
+          const payloadRaw = args.payload;
+          let message = typeof args.message === "string" ? args.message : "";
+          if (!message && typeof payloadRaw === "string") {
+            try {
+              const parsed = JSON.parse(payloadRaw) as { message?: string };
+              if (parsed?.message) message = parsed.message;
+            } catch {
+              message = payloadRaw;
+            }
+          }
+          if (!message && payloadRaw && typeof payloadRaw === "object") {
+            const parsed = payloadRaw as { message?: string };
+            if (parsed?.message) message = parsed.message;
+          }
+          if (!message) message = "Lembrete";
           const name =
             typeof args.name === "string" && args.name.length > 0
               ? args.name
