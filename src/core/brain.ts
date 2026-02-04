@@ -55,10 +55,11 @@ export interface BrainResult {
   action?: "NONE" | "ASK" | "RUN_SKILL" | "RUN_PLAN";
   plan?: Array<{ skill: string; args: Record<string, string | number | boolean | null> }>;
   actions?: Array<{
-    type: "create_dir" | "write_file" | "run_script";
+    type: "create_dir" | "write_file" | "read_file" | "run_script";
     path?: string;
     content?: string;
     script?: string;
+    max_bytes?: number;
   }>;
 }
 
@@ -139,7 +140,9 @@ export async function interpretStrictJson(input: string): Promise<BrainResult | 
     "plan: array de {skill, args}.",
     "missing: array de strings.",
     "reply: resposta curta e natural em português.",
-    "actions: itens com type (create_dir|write_file|run_script) e campos correspondentes.",
+    "actions: itens com type (create_dir|write_file|read_file|run_script) e campos correspondentes.",
+    "read_file: use apenas paths dentro de logs/ ou state/ e limite max_bytes.",
+    "run_script: informe o nome do script no diretorio scripts (ex: update_self.sh).",
     "Para lembretes: use intent CRON_CREATE com args {action:'create', name:'reminder_<timestamp>', jobType:'reminder', schedule:'ISO-8601', payload:'{\"to\":\"<jid>\",\"message\":\"...\"}', runOnce:true}.",
     "Para emails: use intents EMAIL_CONNECT, EMAIL_LIST, EMAIL_READ, EMAIL_REPLY, EMAIL_DELETE, EMAIL_EXPLAIN, EMAIL_DRAFT.",
     "EMAIL_CONNECT args: action:'connect', provider, user, password. EMAIL_LIST args: action:'list', limit, unreadOnly. EMAIL_READ args: action:'read', id. EMAIL_REPLY args: action:'reply', id, body. EMAIL_DELETE args: action:'delete', id.",
