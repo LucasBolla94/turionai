@@ -1,6 +1,6 @@
 # Turion
 
-Assistente pessoal DevOps via WhatsApp com foco em seguranca, auditoria e operacao real.
+Assistente pessoal via WhatsApp com foco em seguranca, auditoria e operacao real.
 
 - Canal: WhatsApp (Baileys)
 - Cerebro: Grok (JSON estrito)

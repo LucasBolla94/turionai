@@ -11,7 +11,7 @@
 Criar um sistema estilo **OpenClaw**, mas com foco em:
 
 - **Controlar o servidor via WhatsApp** (QR Code) e também via **TUI** (terminal/SSH).
-- Executar tarefas de DevOps e automação:
+- Executar tarefas de pessoais e automação:
   - **Deploy automático** de projetos (Docker/Docker Compose ou PM2)
   - **Conectar com GitHub** (clonar, atualizar, buildar, subir)
   - **Criar/editar arquivos** e configurações
@@ -491,7 +491,7 @@ Ou PM2 no host, caso prefira simplicidade.
 
 ## 16) Conclusão
 
-O **Turion** é um “assistente pessoal DevOps” estilo OpenClaw:
+O **Turion** é um “assistente pessoal” estilo OpenClaw:
 - conversa via WhatsApp/Terminal
 - automatiza deploys, crons, arquivos e diagnósticos
 - mantém histórico e auditoria

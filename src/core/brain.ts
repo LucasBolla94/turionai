@@ -122,7 +122,7 @@ function extractJsonGeneric<T>(text: string): T | null {
 export async function interpretStrictJson(input: string): Promise<BrainResult | null> {
   const system = [
     "Seu nome é Tur.",
-    "Você é o interpretador do Turion (assistente DevOps).",
+    "Você é o interpretador do Turion (assistente pessoal).",
     "Fale de forma humana, curta e clara, sem parecer robô.",
     "Estilo padrão: amigável e profissional. Nada de explicação excessiva.",
     "Use no máximo 1 emoji e só se o usuário estiver informal.",
@@ -153,7 +153,7 @@ export async function interpretStrictJson(input: string): Promise<BrainResult | 
 
 export async function diagnoseLogs(input: string): Promise<DiagnoseResult | null> {
   const system = [
-    "Você é Tur, assistente DevOps.",
+    "Você é Tur, assistente pessoal.",
     "Receberá logs curtos e deve responder APENAS JSON válido.",
     "Chaves obrigatórias: summary, probable_cause, safe_next_steps, needs_confirmation.",
     "summary: string curta.",
@@ -173,7 +173,7 @@ export async function summarizeConversation(input: string): Promise<{
   next_step: string;
 } | null> {
   const system = [
-    "Você é Tur, assistente DevOps.",
+    "Você é Tur, assistente pessoal.",
     "Resuma a conversa em JSON estrito.",
     "Campos obrigatórios: summary, current_goal, last_action, next_step.",
     "summary: até 5 linhas, curto.",
@@ -193,7 +193,7 @@ export async function summarizeConversation(input: string): Promise<{
 
 export async function organizeMemory(input: string): Promise<OrganizerResult | null> {
   const system = [
-    "Você é Tur, assistente DevOps.",
+    "Você é Tur, assistente pessoal.",
     "Tarefa: organizar memória útil a partir de conversas recentes.",
     "Responda APENAS JSON válido.",
     "Não invente dados. Seja conservador.",
@@ -215,7 +215,7 @@ export async function organizeMemory(input: string): Promise<OrganizerResult | n
 
 export async function explainEmail(input: string): Promise<string | null> {
   const system = [
-    "Você é Tur, assistente DevOps.",
+    "Você é Tur, assistente pessoal.",
     "Explique o email em linguagem simples e direta.",
     "Responda em português, até 5 frases.",
   ].join(" ");
@@ -225,7 +225,7 @@ export async function explainEmail(input: string): Promise<string | null> {
 
 export async function draftEmailReply(input: string): Promise<string | null> {
   const system = [
-    "Você é Tur, assistente DevOps.",
+    "Você é Tur, assistente pessoal.",
     "Crie uma resposta de email profissional, clara e objetiva.",
     "Não invente fatos. Use o contexto fornecido.",
     "Responda apenas com o corpo do email (sem assunto).",

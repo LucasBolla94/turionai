@@ -2,7 +2,7 @@
   "name": "turionai",
   "version": "0.1.0",
   "private": true,
-  "description": "Turion - assistente pessoal DevOps via WhatsApp/SSH",
+  "description": "Turion - assistente pessoal via WhatsApp/SSH",
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
