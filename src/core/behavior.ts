@@ -15,9 +15,12 @@ export interface EmotionState {
   last_interaction: string;
 }
 
-const BEHAVIOR_DIR = resolve("state", "memory");
+const BEHAVIOR_DIR = resolve("state", "persona");
 const BEHAVIOR_PATH = resolve(BEHAVIOR_DIR, "behavior_profile.json");
 const EMOTION_PATH = resolve(BEHAVIOR_DIR, "emotion_state.json");
+const LEGACY_DIR = resolve("state", "memory");
+const LEGACY_BEHAVIOR_PATH = resolve(LEGACY_DIR, "behavior_profile.json");
+const LEGACY_EMOTION_PATH = resolve(LEGACY_DIR, "emotion_state.json");
 
 const DEFAULT_BEHAVIOR: BehaviorProfile = {
   tone: "friendly",
@@ -38,7 +41,16 @@ async function loadBehavior(): Promise<BehaviorProfile> {
     const data = await readFile(BEHAVIOR_PATH, "utf8");
     return JSON.parse(data) as BehaviorProfile;
   } catch {
-    return { ...DEFAULT_BEHAVIOR };
+    // try legacy path and migrate
+    try {
+      const legacy = await readFile(LEGACY_BEHAVIOR_PATH, "utf8");
+      const parsed = JSON.parse(legacy) as BehaviorProfile;
+      await saveBehavior(parsed);
+      return parsed;
+    } catch {
+      await saveBehavior({ ...DEFAULT_BEHAVIOR });
+      return { ...DEFAULT_BEHAVIOR };
+    }
   }
 }
 
@@ -131,5 +143,27 @@ export async function touchEmotionState(): Promise<void> {
     last_interaction: new Date().toISOString(),
   };
   await mkdir(BEHAVIOR_DIR, { recursive: true });
-  await writeFile(EMOTION_PATH, JSON.stringify(state, null, 2), "utf8");
+  try {
+    await writeFile(EMOTION_PATH, JSON.stringify(state, null, 2), "utf8");
+  } catch {
+    // fallback to legacy path if needed
+    await mkdir(LEGACY_DIR, { recursive: true });
+    await writeFile(LEGACY_EMOTION_PATH, JSON.stringify(state, null, 2), "utf8");
+  }
+}
+
+export async function migrateLegacyEmotionState(): Promise<void> {
+  try {
+    await readFile(EMOTION_PATH, "utf8");
+    return;
+  } catch {
+    // continue
+  }
+  try {
+    const legacy = await readFile(LEGACY_EMOTION_PATH, "utf8");
+    await mkdir(BEHAVIOR_DIR, { recursive: true });
+    await writeFile(EMOTION_PATH, legacy, "utf8");
+  } catch {
+    return;
+  }
 }

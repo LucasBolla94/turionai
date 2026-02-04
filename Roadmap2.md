@@ -206,3 +206,151 @@ Exemplo:
     "deploy_compose.sh": { "risk": "medium", "timeout_ms": 300000, "args": ["project"] }
   }
 }
+Testes
+script fora da policy → não roda
+
+script com timeout → mata e responde limpo
+
+STEP 8 — GitHub Access v1 (conectar repo privado do usuário com o jeito certo)
+Objetivo
+Quando você disser “vê meus repositórios” ou “faz clone do repo X”:
+
+Se não conectado, o Turion ensina o processo (sem inventar credenciais)
+
+Se conectado, ele usa scripts whitelisted pra:
+
+listar repos
+
+clonar
+
+puxar update
+
+redeploy
+
+Recomendação (melhor prática)
+Deploy Key por repositório (read-only ou write se necessário), ou GitHub App.
+Para MVP rápido e seguro: Deploy Key read-only + whitelist git.
+
+Fluxo de UX (WhatsApp)
+Você pede: “conecta no meu GitHub”
+
+Turion responde com 2 opções:
+
+Opção A: Deploy Key (SSH) (recomendado)
+
+Opção B: PAT fine-grained (fallback)
+
+Ele guia passo-a-passo e valida conexão.
+
+Entregáveis
+src/skills/GitHubSkill.ts
+
+scripts whitelisted:
+
+git_check.sh
+
+git_clone.sh
+
+git_pull.sh
+
+git_list_remotes.sh
+
+state/integrations/github.json (sem guardar segredo em texto puro; preferir env/secret store)
+
+Testes
+“clone repo privado X” → se não tiver chave, ele guia
+
+após conectado → clone funciona e project registry atualiza
+
+STEP 9 — Web + Code Combined Plans (pesquisa → decisão → implementação)
+Objetivo
+Permitir planos compostos do tipo:
+
+“pesquisa como configurar X no Nginx e já cria o script”
+
+“acha a doc oficial e implementa a skill conforme o padrão”
+
+Como funciona
+Brain gera plano:
+
+WebResearchSkill (grok-3) pega info
+
+SkillBuilderSkill (grok-code-fast-1) cria implementação
+
+Status/SmokeTestSkill roda teste seguro
+
+Guardrails
+Se a pesquisa trouxer múltiplas abordagens:
+
+Turion escolhe a mais segura e padrão
+
+ou faz 1 pergunta objetiva (só se necessário)
+
+Testes
+“cria uma skill pra checar health do docker” → ele pesquisa melhores comandos + implementa skill
+
+STEP 10 — Quality Gates + Observabilidade (não quebrar produção)
+Objetivo
+Toda criação/alteração automática passa por:
+
+validação
+
+testes mínimos
+
+auditoria
+
+rollback
+
+Entregáveis
+src/core/quality/QualityGate.ts
+
+src/core/quality/SmokeTests.ts
+
+src/core/rollback/RollbackManager.ts
+
+auditoria detalhada no state/audit/*.jsonl
+
+Gates recomendados (MVP)
+TypeScript compile (se aplicável)
+
+lint (se existir)
+
+“dry run” do script
+
+“no secrets in diff” (regex básico)
+
+se falhar: rollback e relatório claro no WhatsApp
+
+Testes
+Forçar erro no script gerado → gate bloqueia + rollback
+
+Forçar tentativa de comando perigoso → bloqueia e audita
+
+Estrutura final (v1.2 adiciona sem bagunçar)
+src/
+  core/
+    ux/
+    prompt/
+    web/
+    builder/
+    quality/
+    rollback/
+  skills/
+    WebResearchSkill.ts
+    SkillBuilderSkill.ts
+    InteractionSkill.ts
+    GitHubSkill.ts
+state/
+  persona/
+  web/
+  builder/
+  security/
+Resultado esperado do v1.2
+✅ Respostas mais humanas e consistentes
+✅ Aprendizado do jeito do usuário (barato)
+✅ Check-ins automáticos 3x/dia com controle total
+✅ Pesquisa web com filtragem e resumo (grok-3)
+✅ Criação de scripts/skills novos com modelo certo (grok-code-fast-1)
+✅ Planos compostos: pesquisar → implementar → testar
+✅ Segurança reforçada (policy por script + gates + rollback)
+✅ Tudo auditável, previsível e econômico em tokens

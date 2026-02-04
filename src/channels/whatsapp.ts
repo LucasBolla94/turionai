@@ -46,7 +46,8 @@ import { loadEmailConfig } from "../core/emailStore";
 import { consumeUpdatePending, hasUpdatePending, markUpdatePending } from "../core/updateStatus";
 import { addEmailRule, extractEmailDomain } from "../core/emailRules";
 import { loadEmailSnapshot } from "../core/emailSnapshot";
-import { applyFeedback, formatReply, getBehaviorProfile, setBehaviorProfile, touchEmotionState } from "../core/behavior";
+import { applyFeedback, setBehaviorProfile, touchEmotionState } from "../core/behavior";
+import { polishReply, syncStyleFromBehavior } from "../core/ux/HumanReply";
 import { recordInteraction, getInteractionState, markCheckinSent } from "../core/interaction";
 import { updatePreferencesFromMessage } from "../core/preferences";
 import { ensurePairingCode, getOwnerState, setOwner, updateOwnerDetails } from "../core/owner";
@@ -417,6 +418,7 @@ export async function initWhatsApp(): Promise<WASocket> {
         if (feedback.memoryText) {
           await addMemoryItem("user_fact", feedback.memoryText);
         }
+        await syncStyleFromBehavior().catch(() => undefined);
         await sendAndLog(socket, from, threadId, "Fechado. Vou ajustar meu jeito de responder.");
         continue;
       }
@@ -1471,9 +1473,7 @@ async function handleBrain(
           createdAt: new Date().toISOString(),
         });
       }
-      const behavior = await getBehaviorProfile();
-      const formatted = formatReply(cleanup ? cleanup.text : outcome.output, behavior);
-      await sendAndLog(socket, to, threadId, formatted);
+      await sendAndLog(socket, to, threadId, cleanup ? cleanup.text : outcome.output);
       return;
     }
 
@@ -1502,8 +1502,7 @@ async function sendAndLog(
   text: string,
 ): Promise<void> {
   await sendTyping(socket, to, 1200);
-  const behavior = await getBehaviorProfile();
-  const formattedText = formatReply(text, behavior);
+  const formattedText = await polishReply(text);
   await socket.sendMessage(to, { text: formattedText });
   await appendConversation({
     ts: new Date().toISOString(),
@@ -1745,7 +1744,21 @@ function extractCleanupSuggestion(
 
 function parseConfirmation(text: string): "confirm" | "cancel" | null {
   const normalized = text.trim().toLowerCase();
-  const confirm = new Set(["confirmar", "sim", "ok", "confirmo", "isso", "isso mesmo", "acertou", "certo", "exato", "correto", "pode"]);
+  const confirm = new Set([
+    "confirmar",
+    "sim",
+    "ok",
+    "confirmo",
+    "isso",
+    "isso mesmo",
+    "isso ai",
+    "isso aí",
+    "acertou",
+    "certo",
+    "exato",
+    "correto",
+    "pode",
+  ]);
   const cancel = new Set(["cancelar", "nao", "não", "cancela", "errado"]);
   if (confirm.has(normalized)) return "confirm";
   if (cancel.has(normalized)) return "cancel";
@@ -1904,9 +1917,7 @@ async function handlePendingDecision(
   }
   const outcome = await skill.execute(pending.args ?? {}, { platform: process.platform });
   await clearPending(threadId);
-  const behavior = await getBehaviorProfile();
-  const formatted = formatReply(outcome.output, behavior);
-  await sendAndLog(socket, to, threadId, formatted);
+  await sendAndLog(socket, to, threadId, outcome.output);
 }
 
 async function handlePendingEmailDeletePick(
@@ -2252,16 +2263,19 @@ async function handleOwnerSetup(
     const roleValue = ai?.value?.trim() || value;
     await updateOwnerDetails({ owner_role: roleValue });
     await addMemoryItem("user_fact", `contexto/rotina: ${roleValue}`);
+    await setBehaviorProfile({ formality: "casual", emoji_level: 0.1, verbosity: "medium" });
+    await updateOwnerDetails({ tone: "amigo", response_detail: "medium" });
+    await syncStyleFromBehavior().catch(() => undefined);
     await setPending(threadId, {
       type: "OWNER_SETUP",
-      stage: "ask_style",
+      stage: "ask_location",
       createdAt: new Date().toISOString(),
     });
     await sendAndLog(
       socket,
       to,
       threadId,
-      "Voce curte respostas mais diretas ou mais explicadinhas? E prefere que eu fale mais como amigo mesmo?",
+      "E voce ta em qual cidade hoje? (e pais, se puder)",
     );
     return true;
   }
@@ -2289,6 +2303,7 @@ async function handleOwnerSetup(
     if (!verbosity) {
       await updateOwnerDetails({ response_detail: "medium" });
     }
+    await syncStyleFromBehavior().catch(() => undefined);
     await setPending(threadId, {
       type: "OWNER_SETUP",
       stage: "ask_location",
