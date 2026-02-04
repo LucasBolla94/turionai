@@ -570,7 +570,7 @@ Resultado esperado
 ✅ Menos tokens gastos em contexto gigante
 ✅ Turion “lembra” sem repetir tudo
 
-FASE 13 — Memória Inteligente (JSON) + Index por Palavras-chave (busca rápida)
+### FASE 13 — Memória Inteligente (JSON) + Index por Palavras-chave (busca rápida)
 Objetivo
 Criar memória persistente tipo “OpenClaw”:
 
