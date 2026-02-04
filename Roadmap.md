@@ -570,7 +570,7 @@ Resultado esperado
 ✅ Menos tokens gastos em contexto gigante
 ✅ Turion “lembra” sem repetir tudo
 
-### FASE 13 — Memória Inteligente (JSON) + Index por Palavras-chave (busca rápida)
+### FASE 13 — Memória Inteligente (JSON) + Index por Palavras-chave (busca rápida) ✅
 Objetivo
 Criar memória persistente tipo “OpenClaw”:
 
@@ -615,7 +615,7 @@ Resultado esperado
 ✅ Memória real, rápida e barata
 ✅ Contexto forte com poucos tokens
 
-FASE 14 — CRON diário (1x/dia) com Grok para organizar memórias (Keyword Organizer)
+FASE 14 — CRON diário (1x/dia) com Grok para organizar memórias (Keyword Organizer) ✅
 Objetivo
 Objetivo
 1 vez por dia (ex: 03:30):

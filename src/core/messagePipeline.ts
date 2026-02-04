@@ -24,6 +24,10 @@ const COMMAND_KEYWORDS = new Set([
   "--update",
   "list",
   "help",
+  "memory",
+  "mem",
+  "time",
+  "timezone",
 ]);
 
 const CHAT_KEYWORDS = new Set([

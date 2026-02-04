@@ -69,6 +69,27 @@ export interface DiagnoseResult {
   needs_confirmation: boolean;
 }
 
+export interface OrganizerResult {
+  digest: string;
+  new_memories: {
+    facts: Array<{ text: string; keywords?: string[]; weight?: number }>;
+    decisions: Array<{ text: string; keywords?: string[]; weight?: number }>;
+    preferences: Array<{ text: string; keywords?: string[]; weight?: number }>;
+    tasks: Array<{ text: string; keywords?: string[]; weight?: number }>;
+    projects: Array<{
+      name: string;
+      repo_url?: string;
+      domains?: string[];
+      notes?: string;
+      keywords?: string[];
+      weight?: number;
+    }>;
+  };
+  updates: Array<{ type: "project"; match: string; patch: Record<string, unknown> }>;
+  dedupe: Array<{ drop_text: string; keep_text: string }>;
+  keyword_index_updates: Record<string, string[]>;
+}
+
 function extractJson(text: string): BrainResult | null {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
@@ -129,4 +150,26 @@ export async function summarizeConversation(input: string): Promise<string | nul
 
   const content = await callXai(system, input);
   return content?.trim() || null;
+}
+
+export async function organizeMemory(input: string): Promise<OrganizerResult | null> {
+  const system = [
+    "Você é Tur, assistente DevOps.",
+    "Tarefa: organizar memória útil a partir de conversas recentes.",
+    "Responda APENAS JSON válido.",
+    "Não invente dados. Seja conservador.",
+    "Memória útil: fatos, decisões, preferências, tarefas e projetos.",
+    "Evite duplicatas (use dedupe quando necessário).",
+    "Formato obrigatório:",
+    "{",
+    '"digest":"...",',
+    '"new_memories":{"facts":[{text,keywords?,weight?}],"decisions":[...],"preferences":[...],"tasks":[...],"projects":[{name,repo_url?,domains?,notes?,keywords?,weight?}]},',
+    '"updates":[{type:"project",match:"name",patch:{...}}],',
+    '"dedupe":[{drop_text:"...",keep_text:"..."}],',
+    '"keyword_index_updates":{"keyword":["id_or_hint"]}',
+    "}",
+  ].join(" ");
+
+  const content = await callXai(system, input);
+  return extractJson(content) as OrganizerResult | null;
 }

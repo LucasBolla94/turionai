@@ -1,5 +1,6 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { upsertProjectMemory } from "./memoryStore";
 
 export interface ProjectEntry {
   name: string;
@@ -50,4 +51,5 @@ export async function upsertProject(entry: ProjectEntry): Promise<void> {
     registry.projects.push(entry);
   }
   await saveRegistry(registry);
+  await upsertProjectMemory(entry);
 }

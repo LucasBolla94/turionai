@@ -25,6 +25,12 @@ import {
   readRecentConversation,
 } from "../core/conversationStore";
 import { summarizeConversation } from "../core/brain";
+import {
+  addMemoryItem,
+  buildMemoryContext,
+  searchMemoryByKeywords,
+} from "../core/memoryStore";
+import { getCurrentTimeString, setTimezone } from "../core/timezone";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -399,6 +405,82 @@ async function handleCommand(
     return;
   }
 
+  if (cmd === "time") {
+    const time = await getCurrentTimeString();
+    await sendAndLog(socket, to, threadId, `Agora são ${time}.`);
+    return;
+  }
+
+  if (cmd === "timezone") {
+    const tz = args[0];
+    if (!tz) {
+      await sendAndLog(socket, to, threadId, "Uso: timezone <Region/City>");
+      return;
+    }
+    try {
+      await setTimezone(tz);
+      const time = await getCurrentTimeString();
+      await sendAndLog(socket, to, threadId, `Fuso horário atualizado: ${tz}. Agora são ${time}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Fuso horário inválido.";
+      await sendAndLog(socket, to, threadId, `Erro: ${message}`);
+    }
+    return;
+  }
+
+  if (cmd === "memory" || cmd === "mem") {
+    const action = args[0];
+    if (!action) {
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Uso: memory add <fact|decision|preference|task> <texto> | memory search <keywords>",
+      );
+      return;
+    }
+    if (action === "add") {
+      const type = args[1] as "fact" | "decision" | "preference" | "task" | undefined;
+      const textValue = args.slice(2).join(" ");
+      if (!type || !textValue) {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Uso: memory add <fact|decision|preference|task> <texto>",
+        );
+        return;
+      }
+      const item = await addMemoryItem(type, textValue);
+      await sendAndLog(socket, to, threadId, `Memoria salva: ${item.id}`);
+      return;
+    }
+    if (action === "search") {
+      const keywords = args.slice(1);
+      if (keywords.length === 0) {
+        await sendAndLog(socket, to, threadId, "Uso: memory search <keywords>");
+        return;
+      }
+      const results = await searchMemoryByKeywords(keywords, 6);
+      if (results.length === 0) {
+        await sendAndLog(socket, to, threadId, "Nenhuma memoria encontrada.");
+        return;
+      }
+      const response = results
+        .map((item) => {
+          if ("name" in item) {
+            return `- [project] ${item.name} | ${item.repo_url}`;
+          }
+          return `- [${item.type}] ${item.text}`;
+        })
+        .join("\n");
+      await sendAndLog(socket, to, threadId, `Memorias:\n${response}`);
+      return;
+    }
+    await sendAndLog(socket, to, threadId, "Ação desconhecida. Use add ou search.");
+    return;
+  }
+
   await sendAndLog(socket, to, threadId, "Comando não reconhecido.");
 }
 
@@ -424,7 +506,34 @@ async function handleBrain(
   text: string,
 ): Promise<void> {
   try {
-    const result = await interpretStrictJson(text);
+    const timeIntent = parseTimeRequest(text);
+    if (timeIntent) {
+      const time = await getCurrentTimeString();
+      await sendAndLog(socket, to, threadId, `Agora são ${time}.`);
+      return;
+    }
+
+    const timeZoneRequest = parseTimezoneRequest(text);
+    if (timeZoneRequest) {
+      try {
+        await setTimezone(timeZoneRequest.timeZone);
+        const time = await getCurrentTimeString();
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          `Fuso horário atualizado para ${timeZoneRequest.label}. Agora são ${time}.`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Fuso horário inválido.";
+        await sendAndLog(socket, to, threadId, `Erro: ${message}`);
+      }
+      return;
+    }
+
+    const memoryContext = await buildMemoryContext(text);
+    const input = memoryContext ? `${memoryContext}\nMensagem: ${text}` : text;
+    const result = await interpretStrictJson(input);
     if (!result) {
       await sendAndLog(socket, to, threadId, "IA sem resposta válida.");
       return;
@@ -505,4 +614,56 @@ async function maybeDigest(threadId: string): Promise<void> {
   const summary = await summarizeConversation(recent.join("\n"));
   if (!summary) return;
   await appendDigest(threadId, summary);
+}
+
+function parseTimeRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized.includes("que horas") ||
+    normalized.includes("horas são") ||
+    normalized.includes("hora são") ||
+    normalized.includes("hora agora") ||
+    normalized === "hora" ||
+    normalized === "horas"
+  );
+}
+
+function parseTimezoneRequest(
+  text: string,
+): { timeZone: string; label: string } | null {
+  const normalized = text.toLowerCase();
+  if (!/(fuso|hor[aá]rio|timezone)/.test(normalized)) {
+    return null;
+  }
+
+  const match = normalized.match(/(?:hor[aá]rio|fuso|timezone)\s+(?:de\s+)?(.+)$/);
+  const raw = match?.[1]?.trim();
+
+  const city = raw || normalized;
+  const mapping: Record<string, { timeZone: string; label: string }> = {
+    londres: { timeZone: "Europe/London", label: "Londres (Europe/London)" },
+    london: { timeZone: "Europe/London", label: "Londres (Europe/London)" },
+    lisboa: { timeZone: "Europe/Lisbon", label: "Lisboa (Europe/Lisbon)" },
+    lisbon: { timeZone: "Europe/Lisbon", label: "Lisboa (Europe/Lisbon)" },
+    "sao paulo": { timeZone: "America/Sao_Paulo", label: "São Paulo (America/Sao_Paulo)" },
+    "são paulo": { timeZone: "America/Sao_Paulo", label: "São Paulo (America/Sao_Paulo)" },
+    brasilia: { timeZone: "America/Sao_Paulo", label: "Brasília (America/Sao_Paulo)" },
+    "rio de janeiro": { timeZone: "America/Sao_Paulo", label: "Rio de Janeiro (America/Sao_Paulo)" },
+    portugal: { timeZone: "Europe/Lisbon", label: "Portugal (Europe/Lisbon)" },
+    uk: { timeZone: "Europe/London", label: "Reino Unido (Europe/London)" },
+    "reino unido": { timeZone: "Europe/London", label: "Reino Unido (Europe/London)" },
+  };
+
+  for (const [key, value] of Object.entries(mapping)) {
+    if (city.includes(key)) {
+      return value;
+    }
+  }
+
+  if (raw && raw.includes("/")) {
+    return { timeZone: raw.trim(), label: raw.trim() };
+  }
+
+  return null;
 }

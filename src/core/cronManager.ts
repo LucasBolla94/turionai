@@ -1,6 +1,7 @@
 import cron, { ScheduledTask } from "node-cron";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { runMemoryOrganizer } from "./memoryOrganizer";
 
 export interface CronJob {
   name: string;
@@ -36,12 +37,31 @@ async function saveState(jobs: CronJob[]): Promise<void> {
 
 function buildTask(job: CronJob): ScheduledTask {
   return cron.schedule(job.schedule, () => {
+    if (job.jobType === "memory_organizer_daily") {
+      console.log(`[Turion][Cron] ${job.name} -> ${job.jobType}`);
+      runMemoryOrganizer().catch((error) => {
+        console.error("[Turion][Cron] Memory organizer falhou:", error);
+      });
+      return;
+    }
     console.log(`[Turion][Cron] ${job.name} -> ${job.jobType}`, job.payload);
   });
 }
 
 export async function initCronManager(): Promise<void> {
   const jobs = await loadState();
+  if (!jobs.find((job) => job.name === "memory_organizer_daily")) {
+    const job: CronJob = {
+      name: "memory_organizer_daily",
+      schedule: "30 3 * * *",
+      jobType: "memory_organizer_daily",
+      payload: "",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    };
+    jobs.push(job);
+    await saveState(jobs);
+  }
   for (const job of jobs) {
     if (!job.enabled) continue;
     const task = buildTask(job);
