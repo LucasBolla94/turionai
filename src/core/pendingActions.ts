@@ -25,6 +25,16 @@ export type PendingAction =
       createdAt: string;
     }
   | {
+      type: "EMAIL_DELETE_PICK";
+      items: Array<{ id: number; sender: string; subject: string }>;
+      createdAt: string;
+    }
+  | {
+      type: "EMAIL_DELETE_CONFIRM";
+      items: Array<{ id: number; sender: string; subject: string }>;
+      createdAt: string;
+    }
+  | {
       type: "RUN_PLAN";
       plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }>;
       createdAt: string;

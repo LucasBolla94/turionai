@@ -147,7 +147,6 @@ export async function initWhatsApp(): Promise<WASocket> {
         console.warn(`[Turion] msg bloqueada`, { sender, from });
         continue;
       }
-      const decision = parseConfirmation(text);
       if (pending && pending.type === "EMAIL_CONNECT_FLOW") {
         const handled = await handlePendingEmailConnect(socket, from, threadId, pending, text);
         if (handled) {
@@ -162,8 +161,19 @@ export async function initWhatsApp(): Promise<WASocket> {
         await sendAndLog(socket, from, threadId, "Fechado. Vou ajustar meu jeito de responder.");
         continue;
       }
+      if (pending && pending.type === "EMAIL_DELETE_PICK") {
+        const handled = await handlePendingEmailDeletePick(socket, from, threadId, pending, text);
+        if (handled) {
+          continue;
+        }
+      }
+      const decision = parseConfirmation(text);
       if (pending && decision) {
         await handlePendingDecision(socket, from, threadId, pending, decision);
+        continue;
+      }
+      const deleteHandled = await maybeHandleEmailDeleteRequest(socket, from, threadId, text);
+      if (deleteHandled) {
         continue;
       }
       const result = classifyMessage({
@@ -1123,6 +1133,32 @@ async function handleBrain(
         }
       }
       if (result.intent.startsWith("EMAIL_")) {
+        if (result.intent === "EMAIL_DELETE") {
+          const snapshot = await loadEmailSnapshot();
+          const resolved = resolveEmailDeleteTargets(text, snapshot?.items ?? []);
+          if (resolved?.items?.length) {
+            await setPending(threadId, {
+              type: "EMAIL_DELETE_CONFIRM",
+              items: resolved.items.map((item) => ({
+                id: item.id,
+                sender: item.sender,
+                subject: item.subject,
+              })),
+              createdAt: new Date().toISOString(),
+            });
+            await sendAndLog(socket, to, threadId, buildEmailDeletePrompt(resolved.items));
+            return;
+          }
+          if (!result.args || !("id" in result.args)) {
+            await sendAndLog(
+              socket,
+              to,
+              threadId,
+              "Qual email voce quer apagar? Se quiser, posso listar os mais recentes.",
+            );
+            return;
+          }
+        }
         if (result.intent === "EMAIL_REPLY") {
           const args = result.args ?? {};
           const id = typeof args.id === "number" ? args.id : Number(args.id);
@@ -1463,7 +1499,7 @@ async function handlePendingDecision(
   socket: WASocket,
   to: string,
   threadId: string,
-  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "EMAIL_CONNECT_FLOW"; provider: "gmail" | "icloud"; stage: "await_email" | "await_password"; email?: string } | { type: "EMAIL_DELETE_SUGGEST"; items: Array<{ id: number; sender: string }> } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
+  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "EMAIL_CONNECT_FLOW"; provider: "gmail" | "icloud"; stage: "await_email" | "await_password"; email?: string } | { type: "EMAIL_DELETE_SUGGEST"; items: Array<{ id: number; sender: string }> } | { type: "EMAIL_DELETE_CONFIRM"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "EMAIL_DELETE_PICK"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
   decision: "confirm" | "cancel",
 ): Promise<void> {
   if (decision === "cancel") {
@@ -1521,6 +1557,53 @@ async function handlePendingDecision(
     );
     return;
   }
+  if (pending.type === "EMAIL_DELETE_CONFIRM") {
+    const emailSkill = new EmailSkill();
+    const failures: Array<string> = [];
+    let successCount = 0;
+    for (const item of pending.items) {
+      try {
+        const result = await emailSkill.execute(
+          { action: "delete", id: item.id },
+          { platform: process.platform },
+        );
+        if (!result.ok) {
+          failures.push(`${item.sender} (#${item.id})`);
+          continue;
+        }
+        successCount += 1;
+      } catch {
+        failures.push(`${item.sender} (#${item.id})`);
+      }
+    }
+    await clearPending(threadId);
+    if (successCount === 0) {
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Tentei apagar, mas deu erro. Quer que eu tente de novo?",
+      );
+      return;
+    }
+    if (failures.length > 0) {
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        `Apaguei ${successCount}, mas falhei em: ${failures.join(", ")}. Quer tentar de novo?`,
+      );
+      return;
+    }
+    const plural = successCount > 1 ? "emails" : "email";
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      `Pronto âœ… Apaguei ${successCount} ${plural}. Quer que eu faca mais alguma coisa?`,
+    );
+    return;
+  }
   if (pending.type === "RUN_PLAN") {
     const outputs = await runPlan(pending.plan, { platform: process.platform });
     await clearPending(threadId);
@@ -1547,6 +1630,245 @@ async function handlePendingDecision(
   const behavior = await getBehaviorProfile();
   const formatted = formatReply(outcome.output, behavior);
   await sendAndLog(socket, to, threadId, formatted);
+}
+
+async function handlePendingEmailDeletePick(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  pending: { type: "EMAIL_DELETE_PICK"; items: Array<{ id: number; sender: string; subject: string }> },
+  text: string,
+): Promise<boolean> {
+  const normalized = text.trim().toLowerCase();
+  if (normalized.includes("todos") || normalized.includes("todas")) {
+    await setPending(threadId, {
+      type: "EMAIL_DELETE_CONFIRM",
+      items: pending.items,
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(socket, to, threadId, buildEmailDeletePrompt(pending.items));
+    return true;
+  }
+  const pick = parsePickIndex(normalized, pending.items.length);
+  if (pick !== null) {
+    const item = pending.items[pick];
+    await setPending(threadId, {
+      type: "EMAIL_DELETE_CONFIRM",
+      items: [item],
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(socket, to, threadId, buildEmailDeletePrompt([item]));
+    return true;
+  }
+  const decision = parseConfirmation(text);
+  if (decision === "cancel") {
+    await clearPending(threadId);
+    await sendAndLog(socket, to, threadId, "Cancelado.");
+    return true;
+  }
+  if (decision === "confirm") {
+    await sendAndLog(socket, to, threadId, "Me diz qual numero voce quer apagar.");
+    return true;
+  }
+  return false;
+}
+
+function parsePickIndex(text: string, max: number): number | null {
+  const match = text.match(/\b(\d+)\b/);
+  if (!match) return null;
+  const index = Number(match[1]);
+  if (!Number.isFinite(index)) return null;
+  if (index < 1 || index > max) return null;
+  return index - 1;
+}
+
+async function maybeHandleEmailDeleteRequest(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  text: string,
+): Promise<boolean> {
+  const snapshot = await loadEmailSnapshot();
+  const items = snapshot?.items ?? [];
+  if (items.length === 0) return false;
+  const resolved = resolveEmailDeleteTargets(text, items);
+  if (!resolved) return false;
+  if (resolved.items.length === 0) {
+    await sendAndLog(socket, to, threadId, "Nao achei esse email. Quer que eu liste os mais recentes?");
+    return true;
+  }
+  if (resolved.needsPick) {
+    await setPending(threadId, {
+      type: "EMAIL_DELETE_PICK",
+      items: resolved.items.map((item) => ({
+        id: item.id,
+        sender: item.sender,
+        subject: item.subject,
+      })),
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(socket, to, threadId, buildEmailPickPrompt(resolved.items));
+    return true;
+  }
+  await setPending(threadId, {
+    type: "EMAIL_DELETE_CONFIRM",
+    items: resolved.items.map((item) => ({
+      id: item.id,
+      sender: item.sender,
+      subject: item.subject,
+    })),
+    createdAt: new Date().toISOString(),
+  });
+  await sendAndLog(socket, to, threadId, buildEmailDeletePrompt(resolved.items));
+  return true;
+}
+
+function resolveEmailDeleteTargets(
+  text: string,
+  items: Array<{ id: number; sender: string; subject: string; category?: string }>,
+): { items: Array<{ id: number; sender: string; subject: string }>; needsPick: boolean } | null {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return null;
+  const deleteVerb = /(apaga|apague|deleta|delete|remova|remover|exclui|excluir|apagar|deletar)/;
+  if (!deleteVerb.test(normalized)) return null;
+  const hasEmailWord =
+    normalized.includes("email") || normalized.includes("e-mail") || normalized.includes("inbox") || normalized.includes("caixa");
+  const mentionPromo =
+    normalized.includes("promo") ||
+    normalized.includes("newsletter") ||
+    normalized.includes("notifica") ||
+    normalized.includes("marketing");
+  const mentionAll = normalized.includes("todos") || normalized.includes("todas");
+  const countTwo =
+    normalized.includes("os dois") ||
+    normalized.includes("as duas") ||
+    normalized.includes("dois") ||
+    normalized.includes("duas") ||
+    normalized.includes(" 2 ");
+
+  const ids = Array.from(normalized.matchAll(/#?\b(\d{3,})\b/g)).map((m) =>
+    Number(m[1]),
+  );
+  if (ids.length > 0) {
+    const matches = items.filter((item) => ids.includes(item.id));
+    return { items: matches, needsPick: false };
+  }
+
+  let base = items;
+  if (mentionPromo) {
+    base = items.filter((item) =>
+      ["promo", "newsletter", "spam"].includes(item.category ?? ""),
+    );
+  }
+
+  const keywordMatches = matchItemsByKeyword(normalized, base);
+  const candidates = keywordMatches.length > 0 ? keywordMatches : base;
+  if (candidates.length === 0) return { items: [], needsPick: false };
+
+  if (countTwo) {
+    return { items: candidates.slice(0, 2), needsPick: false };
+  }
+
+  if (mentionAll || mentionPromo) {
+    return { items: candidates, needsPick: false };
+  }
+
+  if (!hasEmailWord && keywordMatches.length === 0) return null;
+
+  if (keywordMatches.length > 1) {
+    return { items: keywordMatches, needsPick: true };
+  }
+
+  return { items: candidates.slice(0, 1), needsPick: false };
+}
+
+function matchItemsByKeyword(
+  text: string,
+  items: Array<{ id: number; sender: string; subject: string }>,
+): Array<{ id: number; sender: string; subject: string }> {
+  const stopwords = new Set([
+    "apaga",
+    "apague",
+    "deleta",
+    "delete",
+    "remova",
+    "remover",
+    "exclui",
+    "excluir",
+    "apagar",
+    "deletar",
+    "email",
+    "e-mail",
+    "emails",
+    "o",
+    "a",
+    "os",
+    "as",
+    "do",
+    "da",
+    "de",
+    "dos",
+    "das",
+    "pra",
+    "para",
+    "por",
+    "porfavor",
+    "favor",
+    "tambem",
+    "esse",
+    "essa",
+    "esses",
+    "essas",
+    "sim",
+  ]);
+  const tokens = text
+    .replace(/[^\w\s@.-]/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2 && !stopwords.has(token));
+  if (tokens.length === 0) return [];
+  let maxScore = 0;
+  const scored = items.map((item) => {
+    const target = `${item.sender} ${item.subject}`.toLowerCase();
+    let score = 0;
+    for (const token of tokens) {
+      if (target.includes(token)) score += 1;
+    }
+    if (score > maxScore) maxScore = score;
+    return { item, score };
+  });
+  if (maxScore === 0) return [];
+  return scored.filter((entry) => entry.score === maxScore).map((entry) => entry.item);
+}
+
+function buildEmailDeletePrompt(items: Array<{ id: number; sender: string; subject: string }>): string {
+  const lines = items.map(
+    (item, index) => `${index + 1}ï¸âƒ£ ${item.sender} â€” ${shortEmailSubject(item.subject)}`,
+  );
+  const header =
+    items.length === 1
+      ? "So confirmando: posso apagar este email?"
+      : "So confirmando: posso apagar estes emails?";
+  return [header, "", ...lines, "", "Me responde com 'sim' ou 'nao'."]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildEmailPickPrompt(items: Array<{ id: number; sender: string; subject: string }>): string {
+  const lines = items.map(
+    (item, index) => `${index + 1}ï¸âƒ£ ${item.sender} â€” ${shortEmailSubject(item.subject)}`,
+  );
+  return [
+    "Encontrei mais de um email com esse nome.",
+    "Qual deles devo apagar? Responde com 1, 2, 3...",
+    "",
+    ...lines,
+  ].join("\n");
+}
+
+function shortEmailSubject(value: string): string {
+  if (value.length <= 50) return value;
+  return `${value.slice(0, 47)}...`;
 }
 
 function normalizeEmailArgs(
