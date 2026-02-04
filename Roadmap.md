@@ -126,7 +126,7 @@ Garantir que **só números autorizados** possam interagir.
 
 ---
 
-## FASE 4 — Pipeline de mensagens (entender antes de agir)
+## FASE 4 — Pipeline de mensagens (entender antes de agir) ✅
 
 ### Objetivo
 Criar um fluxo claro:

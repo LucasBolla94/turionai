@@ -10,6 +10,7 @@ import qrcode from "qrcode";
 import pino from "pino";
 import { resolve } from "node:path";
 import { isAuthorized } from "../config/allowlist";
+import { classifyMessage } from "../core/messagePipeline";
 
 const authDir = resolve("state", "baileys");
 
@@ -70,7 +71,14 @@ export async function initWhatsApp(): Promise<WASocket> {
         console.warn(`[Turion] msg bloqueada de ${sender}`);
         continue;
       }
+      const result = classifyMessage({
+        text,
+        from,
+        sender,
+        timestamp: Date.now(),
+      });
       console.log(`[Turion] msg de ${from}: ${text}`);
+      console.log(`[Turion] intent: ${result.intent}`, result);
     }
   });
 

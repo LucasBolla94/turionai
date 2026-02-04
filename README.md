@@ -48,3 +48,11 @@ Para sobrescrever, use variável de ambiente:
 ```bash
 TURION_ALLOWLIST="+447432009032,+5511999999999" npm run dev
 ```
+
+## Fase 4 (Message Pipeline)
+
+O Turion classifica mensagens em:
+
+- COMMAND (ex: "status", "deploy", "cron", "/help")
+- CHAT (ex: "oi", "bom dia")
+- UNKNOWN (qualquer outra)
