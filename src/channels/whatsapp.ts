@@ -63,9 +63,10 @@ export async function initWhatsApp(): Promise<WASocket> {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
+      console.log("[Tur] Novo QR Code gerado. Use imediatamente.");
       const qrText = await qrcode.toString(qr, { type: "terminal" });
       console.log(qrText);
-      console.log("[Turion] escaneie o QR Code acima com o WhatsApp.");
+      console.log("[Tur] Escaneie o QR Code acima com o WhatsApp.");
     }
 
     if (connection === "open") {
