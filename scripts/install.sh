@@ -36,6 +36,18 @@ install_docker() {
   sudo usermod -aG docker "$USER" || true
 }
 
+start_docker_service() {
+  if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl enable --now docker || true
+    if systemctl is-active --quiet docker; then
+      return 0
+    fi
+  fi
+  if command -v service >/dev/null 2>&1; then
+    sudo service docker start || true
+  fi
+}
+
 install_compose_plugin() {
   if docker compose version >/dev/null 2>&1; then
     return 0
@@ -130,6 +142,7 @@ fi
 
 install_docker
 install_compose_plugin
+start_docker_service
 
 sudo mkdir -p "$INSTALL_DIR"
 sudo chown -R "$USER":"$USER" "$INSTALL_DIR"
