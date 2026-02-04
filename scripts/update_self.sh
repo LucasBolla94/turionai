@@ -6,6 +6,15 @@ EXPECTED_URL_1="git@github.com:LucasBolla94/turionai.git"
 EXPECTED_URL_2="https://github.com/LucasBolla94/turionai"
 EXPECTED_URL_3="https://github.com/LucasBolla94/turionai.git"
 
+if ! command -v git >/dev/null 2>&1; then
+  if command -v apk >/dev/null 2>&1; then
+    apk add --no-cache git
+  else
+    echo "git não encontrado."
+    exit 1
+  fi
+fi
+
 cd "$REPO_DIR"
 
 REMOTE_URL="$(git config --get remote.origin.url || true)"
