@@ -39,6 +39,7 @@ import { clearPending, getPending, setPending } from "../core/pendingActions";
 import { loadEmailConfig } from "../core/emailStore";
 import { consumeUpdatePending, markUpdatePending } from "../core/updateStatus";
 import { addEmailRule, extractEmailDomain } from "../core/emailRules";
+import { loadEmailSnapshot } from "../core/emailSnapshot";
 import { applyFeedback, formatReply, getBehaviorProfile, touchEmotionState } from "../core/behavior";
 import { recordInteraction, getInteractionState, markCheckinSent } from "../core/interaction";
 import { updatePreferencesFromMessage } from "../core/preferences";
@@ -663,6 +664,43 @@ async function handleBrain(
       return;
     }
 
+    if (parseEmailPromoRequest(text)) {
+      const snap = await loadEmailSnapshot();
+      if (!snap || snap.items.length === 0) {
+        await sendAndLog(socket, to, threadId, "Ainda nao tenho uma lista recente. Quer que eu verifique seus emails agora?");
+        return;
+      }
+      const promos = snap.items.filter((item) => item.category === "promo" || item.category === "newsletter");
+      if (promos.length === 0) {
+        await sendAndLog(socket, to, threadId, "Nao achei promos/newsletters na ultima checagem.");
+        return;
+      }
+      const lines = promos.slice(0, 4).map((item, idx) => `\u0031\u20e3${idx + 1} ${item.sender} — ${item.subject}`);
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        [
+          "Claro 🙂",
+          "Esses aqui parecem promo/newsletter:",
+          "",
+          ...lines,
+          "",
+          "Quer que eu:",
+          "1️⃣ Abra algum pra confirmar",
+          "2️⃣ Apague todos esses",
+          "3️⃣ Ignore esse tipo no futuro",
+          "4️⃣ Não faça nada",
+        ].join("\n"),
+      );
+      await setPending(threadId, {
+        type: "EMAIL_DELETE_SUGGEST",
+        items: promos.map((item) => ({ id: item.id, sender: item.sender })),
+        createdAt: new Date().toISOString(),
+      });
+      return;
+    }
+
     const provider = parseEmailProvider(text);
     if (provider) {
       await setPending(threadId, {
@@ -1146,6 +1184,14 @@ function parseEmailProvider(text: string): "icloud" | "gmail" | null {
   return null;
 }
 
+function parseEmailPromoRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  const hasPromo = normalized.includes("promo") || normalized.includes("newsletter");
+  const hasAsk = normalized.includes("quais") || normalized.includes("mostra") || normalized.includes("ver");
+  return hasPromo && (hasAsk || normalized.length < 20);
+}
+
 function extractEmail(text: string): string | null {
   const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
   return match ? match[0] : null;
@@ -1297,6 +1343,7 @@ async function handlePendingDecision(
   }
   if (pending.type === "EMAIL_DELETE_SUGGEST") {
     const emailSkill = new EmailSkill();
+    const failures: Array<string> = [];
     for (const item of pending.items) {
       try {
         await emailSkill.execute({ action: "delete", id: item.id }, { platform: process.platform });
@@ -1311,15 +1358,24 @@ async function handlePendingDecision(
           });
         }
       } catch {
-        // ignore individual failures
+        failures.push(`${item.sender} (#${item.id})`);
       }
     }
     await clearPending(threadId);
+    if (failures.length > 0) {
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        `Apaguei alguns, mas falhei em: ${failures.join(", ")}. Quer tentar de novo?`,
+      );
+      return;
+    }
     await sendAndLog(
       socket,
       to,
       threadId,
-      "Feito. Apaguei esses emails e vou priorizar melhor a partir de agora.",
+      "Pronto ✅ Apaguei esses emails. Quer que eu faça o mesmo com outros parecidos?",
     );
     return;
   }

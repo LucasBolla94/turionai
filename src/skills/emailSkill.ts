@@ -3,6 +3,7 @@ import { buildEmailConfig, loadEmailConfig, saveEmailConfig } from "../core/emai
 import { listEmails, readEmail, sendEmail, deleteEmail, type EmailSummary } from "../core/emailClient";
 import { getTimezone } from "../core/timezone";
 import { getEmailRules, matchRule } from "../core/emailRules";
+import { saveEmailSnapshot } from "../core/emailSnapshot";
 import { draftEmailReply, explainEmail } from "../core/brain";
 
 export class EmailSkill implements Skill {
@@ -54,6 +55,15 @@ export class EmailSkill implements Skill {
       const rules = await getEmailRules();
       const important = result.items.filter(
         (mail) => computeEmailPriority(mail, rules).importance === "alta",
+      );
+
+      await saveEmailSnapshot(
+        result.items.map((mail) => ({
+          id: mail.id,
+          sender: simplifySender(mail.from),
+          subject: mail.subject,
+          category: mapCategory(mail),
+        })),
       );
 
       if (mode === "compact") {
@@ -303,4 +313,11 @@ function classifyEmailCategory(mail: EmailSummary): string {
     return "newsletter/promoções";
   }
   return "atualizações gerais";
+}
+
+function mapCategory(mail: EmailSummary): "important" | "normal" | "promo" | "newsletter" | "spam" {
+  const category = classifyEmailCategory(mail);
+  if (category === "segurança/conta" || category === "oportunidades de trabalho") return "important";
+  if (category === "newsletter/promoções") return "promo";
+  return "normal";
 }
