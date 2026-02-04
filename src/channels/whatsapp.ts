@@ -541,6 +541,89 @@ async function handleCommand(
     return;
   }
 
+  if (cmd === "git") {
+    const sub = args[0] ?? "";
+    const target = args[1] ?? "";
+    if (sub === "setup") {
+      const setupScript =
+        process.platform === "win32" ? "git_setup_ssh.ps1" : "git_setup_ssh.sh";
+      try {
+        const output = await runScript(setupScript);
+        const pubKey = output.split("\n").find((l) => l.startsWith("PUBLIC_KEY:")) ?? "";
+        const fingerprint =
+          output.split("\n").find((l) => l.startsWith("FINGERPRINT:")) ?? "";
+        const message = [
+          "Chave SSH gerada. Copie a PUBLIC KEY abaixo e adicione no GitHub:",
+          "",
+          pubKey.replace("PUBLIC_KEY:", "").trim(),
+          "",
+          fingerprint.trim(),
+          "",
+          "GitHub > Repo > Settings > Deploy keys > Add deploy key",
+          "Depois me avise: 'ja adicionei'.",
+        ].join("\n");
+        await sendAndLog(socket, to, threadId, message);
+        return;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Falha ao gerar chave.";
+        await sendAndLog(socket, to, threadId, `Erro: ${message}`);
+        return;
+      }
+    }
+    if (sub === "test") {
+      const testScript =
+        process.platform === "win32" ? "git_test_ssh.ps1" : "git_test_ssh.sh";
+      const output = await runScript(testScript);
+      await sendAndLog(socket, to, threadId, output.includes("OK") ? "Conexao OK ✅" : output);
+      return;
+    }
+    if (sub === "clone") {
+      if (!target) {
+        await sendAndLog(socket, to, threadId, "Uso: git clone <owner/repo>");
+        return;
+      }
+      const repoUrl = `git@github.com:${target}.git`;
+      const base =
+        process.platform === "win32" ? "C:\\\\opt\\\\turion\\\\projects" : "/opt/turion/projects";
+      const name = target.split("/").pop() ?? target;
+      const path =
+        process.platform === "win32" ? `${base}\\\\${name}` : `${base}/${name}`;
+      const script = process.platform === "win32" ? "git_clone.ps1" : "git_clone.sh";
+      try {
+        const output = await runScript(script, [repoUrl, path]);
+        await sendAndLog(socket, to, threadId, output || "Clone concluído.");
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Falha ao clonar.";
+        await sendAndLog(socket, to, threadId, `Erro: ${message}`);
+      }
+      return;
+    }
+    if (sub === "pull") {
+      if (!target) {
+        await sendAndLog(socket, to, threadId, "Uso: git pull <project>");
+        return;
+      }
+      const base =
+        process.platform === "win32" ? "C:\\\\opt\\\\turion\\\\projects" : "/opt/turion/projects";
+      const path =
+        process.platform === "win32" ? `${base}\\\\${target}` : `${base}/${target}`;
+      const script = process.platform === "win32" ? "git_pull.ps1" : "git_pull.sh";
+      try {
+        const output = await runScript(script, [path]);
+        await sendAndLog(socket, to, threadId, output || "Pull concluído.");
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Falha no pull.";
+        await sendAndLog(socket, to, threadId, `Erro: ${message}`);
+      }
+      return;
+    }
+    await sendAndLog(socket, to, threadId, "Uso: git setup|test|clone|pull");
+    return;
+  }
+
   if (cmd === "memory" || cmd === "mem") {
     const action = args[0];
     if (!action) {
