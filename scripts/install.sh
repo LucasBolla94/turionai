@@ -190,10 +190,11 @@ if ! run_compose up -d --force-recreate >/dev/null 2>&1; then
   echo "[Tur] Falha ao subir container. Reexecutando com logs..."
   run_compose up -d --force-recreate
 fi
+sleep 2
 
 step "Pronto. Abrindo logs para QR Code (Ctrl+C para sair)"
 if command -v awk >/dev/null 2>&1; then
-  run_compose logs -f | awk '
+  run_compose logs --since 5s -f | awk '
     BEGIN { show=0 }
     /\[Tur\] Codigo de pareamento:/ { print; next }
     /\[Tur\] Novo QR Code gerado/ { show=1; print; next }
