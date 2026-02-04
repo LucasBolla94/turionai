@@ -47,13 +47,13 @@ install_docker() {
 
 start_docker_service() {
   if command -v systemctl >/dev/null 2>&1; then
-    sudo systemctl enable --now docker || true
+    sudo systemctl enable --now docker >/dev/null 2>&1 || true
     if systemctl is-active --quiet docker; then
       return 0
     fi
   fi
   if command -v service >/dev/null 2>&1; then
-    sudo service docker start || true
+    sudo service docker start >/dev/null 2>&1 || true
   fi
 }
 
@@ -165,11 +165,11 @@ sudo chown -R "$USER":"$USER" "$INSTALL_DIR"
 
 if [ -d "$APP_DIR/.git" ]; then
   step "Repositorio ja existe. Atualizando"
-  git -C "$APP_DIR" fetch origin main
-  git -C "$APP_DIR" merge --ff-only origin/main
+  git -C "$APP_DIR" fetch -q origin main
+  git -C "$APP_DIR" merge --ff-only -q origin/main
 else
   step "Clonando repositorio"
-  git clone "$REPO_URL" "$APP_DIR"
+  git clone --quiet "$REPO_URL" "$APP_DIR"
 fi
 
 cd "$APP_DIR"
@@ -184,7 +184,10 @@ EOF
 fi
 
 step "Subindo container"
-run_compose up -d
+if ! run_compose up -d >/dev/null 2>&1; then
+  echo "[Tur] Falha ao subir container. Reexecutando com logs..."
+  run_compose up -d
+fi
 
 step "Pronto. Abrindo logs para QR Code (Ctrl+C para sair)"
 run_compose logs -f

@@ -125,7 +125,9 @@ export async function initWhatsApp(): Promise<WASocket> {
       if (shouldReconnect) {
         await initWhatsApp();
       } else {
-        console.warn("[Turion] Sessão encerrada. Remova state/baileys e reconecte.");
+        console.warn("[Turion] Sessao encerrada. Gerando novo QR Code...");
+        await resetAuthState();
+        await initWhatsApp();
       }
     }
   });
