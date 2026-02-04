@@ -56,3 +56,17 @@ O Turion classifica mensagens em:
 - COMMAND (ex: "status", "deploy", "cron", "/help")
 - CHAT (ex: "oi", "bom dia")
 - UNKNOWN (qualquer outra)
+
+## Fase 5 (Executor seguro)
+
+O executor roda apenas scripts dentro da pasta `scripts/`.
+
+Scripts padrão:
+- `ping.sh`
+- `whoami.sh`
+
+Para definir outra pasta:
+
+```bash
+TURION_SCRIPTS_DIR="C:\\caminho\\para\\scripts" npm run dev
+```

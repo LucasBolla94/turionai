@@ -157,7 +157,7 @@ Criar um fluxo claro:
 
 ---
 
-## FASE 5 — Executor SEGURO (sem poder destrutivo)
+## FASE 5 — Executor SEGURO (sem poder destrutivo) ✅
 
 ### Objetivo
 Criar a base que executa comandos **sem risco**.
