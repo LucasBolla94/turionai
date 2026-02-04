@@ -35,6 +35,11 @@ export type PendingAction =
       createdAt: string;
     }
   | {
+      type: "OWNER_SETUP";
+      stage: "await_name" | "await_role" | "await_api_key" | "await_tone";
+      createdAt: string;
+    }
+  | {
       type: "RUN_PLAN";
       plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }>;
       createdAt: string;

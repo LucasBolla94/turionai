@@ -40,9 +40,10 @@ import { loadEmailConfig } from "../core/emailStore";
 import { consumeUpdatePending, hasUpdatePending, markUpdatePending } from "../core/updateStatus";
 import { addEmailRule, extractEmailDomain } from "../core/emailRules";
 import { loadEmailSnapshot } from "../core/emailSnapshot";
-import { applyFeedback, formatReply, getBehaviorProfile, touchEmotionState } from "../core/behavior";
+import { applyFeedback, formatReply, getBehaviorProfile, setBehaviorProfile, touchEmotionState } from "../core/behavior";
 import { recordInteraction, getInteractionState, markCheckinSent } from "../core/interaction";
 import { updatePreferencesFromMessage } from "../core/preferences";
+import { ensurePairingCode, getOwnerState, setOwner, updateOwnerDetails } from "../core/owner";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -81,6 +82,11 @@ export async function initWhatsApp(): Promise<WASocket> {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
+      const owner = await getOwnerState();
+      if (!owner?.owner_jid) {
+        const code = await ensurePairingCode();
+        console.log(`[Tur] Codigo de pareamento: ${code}`);
+      }
       console.log("[Tur] Novo QR Code gerado. Use imediatamente.");
       const qrText = await qrcode.toString(qr, { type: "terminal" });
       console.log(qrText);
@@ -133,7 +139,14 @@ export async function initWhatsApp(): Promise<WASocket> {
       const from = message.key.remoteJid ?? "unknown";
       const threadId = from.replace(/[^\w]/g, "_");
       const sender = message.key.participant ?? message.key.remoteJid ?? "unknown";
-      const authorized = isAuthorized(sender) || isAuthorized(from);
+      const owner = await getOwnerState();
+      const ownerJid = owner?.owner_jid;
+      const authorized =
+        !ownerJid ||
+        ownerJid === sender ||
+        ownerJid === from ||
+        isAuthorized(sender) ||
+        isAuthorized(from);
       const text =
         message.message?.conversation ??
         message.message?.extendedTextMessage?.text ??
@@ -145,6 +158,32 @@ export async function initWhatsApp(): Promise<WASocket> {
       const sanitizedText = sanitizeConversationText(text, pending);
       if (!authorized) {
         console.warn(`[Turion] msg bloqueada`, { sender, from });
+        continue;
+      }
+      if (!ownerJid) {
+        const code = owner?.pairing_code ?? (await ensurePairingCode());
+        const normalized = text.trim();
+        if (normalized === code) {
+          await setOwner(sender);
+          await setPending(threadId, {
+            type: "OWNER_SETUP",
+            stage: "await_name",
+            createdAt: new Date().toISOString(),
+          });
+          await sendAndLog(
+            socket,
+            from,
+            threadId,
+            "Boa, pareamos com sucesso. Como posso te chamar?",
+          );
+          continue;
+        }
+        await sendAndLog(
+          socket,
+          from,
+          threadId,
+          "Para iniciar, me envia o codigo de pareamento que apareceu no terminal antes do QR.",
+        );
         continue;
       }
       if (pending && pending.type === "EMAIL_CONNECT_FLOW") {
@@ -163,6 +202,12 @@ export async function initWhatsApp(): Promise<WASocket> {
         }
         await sendAndLog(socket, from, threadId, "Fechado. Vou ajustar meu jeito de responder.");
         continue;
+      }
+      if (pending && pending.type === "OWNER_SETUP") {
+        const handled = await handleOwnerSetup(socket, from, threadId, pending, text);
+        if (handled) {
+          continue;
+        }
       }
       if (pending && pending.type === "EMAIL_DELETE_PICK") {
         const handled = await handlePendingEmailDeletePick(socket, from, threadId, pending, text);
@@ -1485,7 +1530,7 @@ async function handlePendingDecision(
   socket: WASocket,
   to: string,
   threadId: string,
-  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "EMAIL_CONNECT_FLOW"; provider: "gmail" | "icloud"; stage: "await_email" | "await_password"; email?: string } | { type: "EMAIL_DELETE_SUGGEST"; items: Array<{ id: number; sender: string }> } | { type: "EMAIL_DELETE_CONFIRM"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "EMAIL_DELETE_PICK"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
+  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "EMAIL_CONNECT_FLOW"; provider: "gmail" | "icloud"; stage: "await_email" | "await_password"; email?: string } | { type: "EMAIL_DELETE_SUGGEST"; items: Array<{ id: number; sender: string }> } | { type: "EMAIL_DELETE_CONFIRM"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "EMAIL_DELETE_PICK"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "OWNER_SETUP"; stage: "await_name" | "await_role" | "await_api_key" | "await_tone" } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
   decision: "confirm" | "cancel",
 ): Promise<void> {
   if (decision === "cancel") {
@@ -1890,6 +1935,127 @@ function enforceResponseStructure(reply: string): string {
     lines.push("Quer que eu siga?");
   }
   return lines.join("\n");
+}
+
+async function handleOwnerSetup(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  pending: { type: "OWNER_SETUP"; stage: "await_name" | "await_role" | "await_api_key" | "await_tone" },
+  text: string,
+): Promise<boolean> {
+  const value = text.trim();
+  if (!value) return false;
+
+  if (pending.stage === "await_name") {
+    await updateOwnerDetails({ owner_name: value });
+    await addMemoryItem("user_fact", `nome do usuario: ${value}`);
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "await_role",
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(socket, to, threadId, "Perfeito. O que voce faz ou em que area trabalha?");
+    return true;
+  }
+
+  if (pending.stage === "await_role") {
+    await updateOwnerDetails({ owner_role: value });
+    await addMemoryItem("user_fact", `trabalho/area: ${value}`);
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "await_api_key",
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "Boa. Agora me envie a API do Grok (XAI_API_KEY).",
+    );
+    return true;
+  }
+
+  if (pending.stage === "await_api_key") {
+    if (!value.startsWith("xai-")) {
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Essa chave nao parece valida. Envie a XAI_API_KEY começando com xai-.",
+      );
+      return true;
+    }
+    await saveEnvValue("XAI_API_KEY", value);
+    process.env.XAI_API_KEY = value;
+    await addMemoryItem("decision", "Grok configurado como modelo principal");
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "await_tone",
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "Certo. Como prefere meu jeito de falar? (curto/medio/longo e formal/casual)",
+    );
+    return true;
+  }
+
+  if (pending.stage === "await_tone") {
+    const normalized = value.toLowerCase();
+    if (normalized.includes("curto")) {
+      await setBehaviorProfile({ verbosity: "short" });
+      await addMemoryItem("user_fact", "prefere respostas curtas");
+    } else if (normalized.includes("longo")) {
+      await setBehaviorProfile({ verbosity: "long" });
+      await addMemoryItem("user_fact", "prefere respostas longas");
+    } else {
+      await setBehaviorProfile({ verbosity: "medium" });
+    }
+
+    if (normalized.includes("formal")) {
+      await setBehaviorProfile({ formality: "formal", emoji_level: 0 });
+      await addMemoryItem("user_fact", "prefere tom formal");
+    } else if (normalized.includes("casual")) {
+      await setBehaviorProfile({ formality: "casual", emoji_level: 0.1 });
+      await addMemoryItem("user_fact", "prefere tom casual");
+    }
+
+    await clearPending(threadId);
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "Prontinho. Setup concluido. Quer que eu te mostre o que consigo fazer?",
+    );
+    return true;
+  }
+
+  return false;
+}
+
+async function saveEnvValue(key: string, value: string): Promise<void> {
+  const envPath = resolve(".env");
+  try {
+    const current = await (await import("node:fs/promises")).readFile(envPath, "utf8");
+    const lines = current.split(/\r?\n/);
+    let found = false;
+    const next = lines.map((line) => {
+      if (line.startsWith(`${key}=`)) {
+        found = true;
+        return `${key}=${value}`;
+      }
+      return line;
+    });
+    if (!found) {
+      next.push(`${key}=${value}`);
+    }
+    await (await import("node:fs/promises")).writeFile(envPath, next.join("\n"), "utf8");
+  } catch {
+    await (await import("node:fs/promises")).writeFile(envPath, `${key}=${value}\n`, "utf8");
+  }
 }
 
 function normalizeEmailArgs(

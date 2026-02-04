@@ -51,6 +51,15 @@ export async function getBehaviorProfile(): Promise<BehaviorProfile> {
   return loadBehavior();
 }
 
+export async function setBehaviorProfile(
+  patch: Partial<BehaviorProfile>,
+): Promise<BehaviorProfile> {
+  const profile = await loadBehavior();
+  const updated: BehaviorProfile = { ...profile, ...patch };
+  await saveBehavior(updated);
+  return updated;
+}
+
 export async function applyFeedback(
   text: string,
 ): Promise<{ profile: BehaviorProfile; memoryText?: string } | null> {
