@@ -18,6 +18,32 @@ function isValidTimeZone(timeZone: string): boolean {
   }
 }
 
+export function normalizeTimezoneInput(value: string): string | null {
+  const raw = value.trim();
+  if (!raw) return null;
+  const normalized = raw.toLowerCase();
+  const mapping: Record<string, string> = {
+    londres: "Europe/London",
+    london: "Europe/London",
+    lisboa: "Europe/Lisbon",
+    lisbon: "Europe/Lisbon",
+    portugal: "Europe/Lisbon",
+    uk: "Europe/London",
+    "reino unido": "Europe/London",
+    "sao paulo": "America/Sao_Paulo",
+    "são paulo": "America/Sao_Paulo",
+    brasilia: "America/Sao_Paulo",
+    "rio de janeiro": "America/Sao_Paulo",
+  };
+  for (const [key, tz] of Object.entries(mapping)) {
+    if (normalized.includes(key)) {
+      return tz;
+    }
+  }
+  if (raw.includes("/")) return raw;
+  return null;
+}
+
 export async function getTimezone(): Promise<string> {
   try {
     const data = await readFile(SETTINGS_PATH, "utf8");

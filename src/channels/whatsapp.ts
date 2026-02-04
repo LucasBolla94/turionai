@@ -31,7 +31,7 @@ import {
   buildMemoryContext,
   searchMemoryByKeywords,
 } from "../core/memoryStore";
-import { getCurrentTimeString, setTimezone } from "../core/timezone";
+import { getCurrentTimeString, normalizeTimezoneInput, setTimezone } from "../core/timezone";
 import { registerCronHandler } from "../core/cronManager";
 import { readLatestDigest } from "../core/conversationStore";
 import { getTimezone } from "../core/timezone";
@@ -2105,8 +2105,18 @@ async function handleOwnerSetup(
   }
 
   if (pending.stage === "await_timezone") {
-    const tz = value;
-    await setTimezone(tz);
+    const tz = normalizeTimezoneInput(value) ?? value;
+    try {
+      await setTimezone(tz);
+    } catch {
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Esse fuso nao parece valido. Ex: Europe/London, Europe/Lisbon, America/Sao_Paulo.",
+      );
+      return true;
+    }
     await addMemoryItem("user_fact", `fuso horario: ${tz}`);
     await setPending(threadId, {
       type: "OWNER_SETUP",
