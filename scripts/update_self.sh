@@ -3,9 +3,8 @@ set -e
 set -x
 
 REPO_DIR="${TURION_REPO_DIR:-/app}"
-EXPECTED_URL_1="git@github.com:LucasBolla94/turionai.git"
-EXPECTED_URL_2="https://github.com/LucasBolla94/turionai"
-EXPECTED_URL_3="https://github.com/LucasBolla94/turionai.git"
+EXPECTED_URL_1="https://github.com/LucasBolla94/turionai"
+EXPECTED_URL_2="https://github.com/LucasBolla94/turionai.git"
 
 if ! command -v git >/dev/null 2>&1; then
   if command -v apk >/dev/null 2>&1; then
@@ -22,11 +21,13 @@ if [ ! -d ".git" ]; then
   exit 1
 fi
 
+git config --global --add safe.directory "$REPO_DIR" || true
+
 REMOTE_URL="$(git config --get remote.origin.url || true)"
 echo "Remote: $REMOTE_URL"
 if [ -z "$REMOTE_URL" ]; then
   echo "Remote vazio. Configurando origin..."
-  git remote add origin "$EXPECTED_URL_1" || true
+  git remote add origin "$EXPECTED_URL_2" || true
   REMOTE_URL="$(git config --get remote.origin.url || true)"
   echo "Remote: $REMOTE_URL"
 fi
@@ -42,5 +43,7 @@ fi
 
 git fetch origin main
 git merge --ff-only origin/main
+
+npm install
 
 echo "Atualizacao aplicada."
