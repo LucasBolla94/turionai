@@ -263,6 +263,35 @@ export async function checkXaiHealth(): Promise<{ ok: boolean; message: string }
   }
 }
 
+export async function humanizeReply(input: {
+  text: string;
+  profile: { formality: string; verbosity: string; emoji_level: number };
+  templates: { acknowledgements: string[]; closings: string[]; guidance: string[] } | null;
+  seed: number;
+  last_hash?: string;
+}): Promise<string | null> {
+  if (!process.env.XAI_API_KEY) return null;
+  const system = [
+    "Voce eh Tur, assistente pessoal.",
+    "Reescreva a resposta mantendo o mesmo significado.",
+    "Use as frases de exemplo como base de estilo, sem copiar literalmente.",
+    "Evite repetir exatamente a ultima resposta (use a seed).",
+    "Nao invente fatos. Nao remova informacoes importantes.",
+    "Responda em portugues com tom humano.",
+    "Seja consistente com formality/verbosity/emoji_level do perfil.",
+    "Retorne apenas a resposta final, sem explicacoes.",
+  ].join(" ");
+  const payload = {
+    text: input.text,
+    profile: input.profile,
+    templates: input.templates,
+    seed: input.seed,
+    last_hash: input.last_hash,
+  };
+  const content = await callXai(system, JSON.stringify(payload));
+  return content?.trim() || null;
+}
+
 export interface OnboardingAnswer {
   value: string;
   timezone?: string;

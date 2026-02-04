@@ -7,6 +7,7 @@ export interface BehaviorProfile {
   emoji_level: number;
   humor: "light" | "none";
   verbosity: "short" | "medium" | "long";
+  ai_polish: boolean;
 }
 
 export interface EmotionState {
@@ -28,6 +29,7 @@ const DEFAULT_BEHAVIOR: BehaviorProfile = {
   emoji_level: 0.1,
   humor: "none",
   verbosity: "short",
+  ai_polish: true,
 };
 
 const DEFAULT_EMOTION: EmotionState = {

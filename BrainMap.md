@@ -18,6 +18,7 @@ Mensagem ? Pipeline ? (Grok JSON) ? Validação ? Skill/Executor ? Log + Memória
 ## 2) O que o Tur sabe fazer hoje
 ### Ações principais
 - **Responder mensagens** com tom humano (ajustado pelo usuário)
+- **Human UX Engine**: polimento de resposta com IA + templates (varia sem repetir)
 - **Executar comandos permitidos** (`status`, `run`, `logs`, `deploy`, `redeploy` etc.)
 - **Checar e resumir logs**
 - **CRON** (lembretes e tarefas programadas)
@@ -56,6 +57,10 @@ Arquivo: `src/core/brain.ts`
 - Faz chamadas ao Grok via API
 - Espera JSON estrito
 - Interpreta intenção, risco e ações
+### 3.2.1 Human UX Engine
+Arquivos: `src/core/ux/HumanReply.ts`, `scripts/human_reply_templates.json`, `state/persona/human_reply_state.json`
+- Polimento de resposta com IA (quando chave configurada)
+- Evita respostas iguais seguidas usando seed + hash
 
 ### 3.3 Pipeline de Mensagens
 Arquivo: `src/core/messagePipeline.ts`

@@ -20,6 +20,7 @@ Este v1.2 **não substitui** as fases 0–15 (já concluídas). Ele **evolui por
 ---
 
 # STEP 1 — Human UX Engine (fala humana consistente + previsível)
+STATUS: DONE
 
 ### Objetivo
 Padronizar o jeito de falar do Turion (amigável, profissional, útil), mas **sem custar tokens** e sem afetar decisões técnicas.

@@ -1,0 +1,20 @@
+{
+  "acknowledgements": [
+    "Entendi.",
+    "Fechado.",
+    "Boa, peguei.",
+    "Certo, vamos nisso.",
+    "Combinado."
+  ],
+  "closings": [
+    "Quer que eu siga?",
+    "Quer que eu faca agora?",
+    "Quer que eu continue?",
+    "Posso seguir?"
+  ],
+  "guidance": [
+    "Posso deixar mais curto ou mais detalhado, se preferir.",
+    "Se quiser, explico em mais detalhes.",
+    "Se quiser, resumo em uma linha."
+  ]
+}
