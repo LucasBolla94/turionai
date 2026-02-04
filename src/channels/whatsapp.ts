@@ -124,6 +124,11 @@ export async function initWhatsApp(): Promise<WASocket> {
       const error = lastDisconnect?.error as Boom | undefined;
       const statusCode = error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      const shouldResetAuth =
+        statusCode === DisconnectReason.loggedOut ||
+        statusCode === DisconnectReason.restartRequired ||
+        statusCode === DisconnectReason.badSession ||
+        statusCode === DisconnectReason.connectionReplaced;
 
       console.warn("[Turion] WhatsApp desconectado.", {
         statusCode,
@@ -133,11 +138,15 @@ export async function initWhatsApp(): Promise<WASocket> {
         lastQr = null;
       }
 
-      if (shouldReconnect) {
-        await initWhatsApp();
-      } else {
+      if (shouldResetAuth) {
         console.warn("[Turion] Sessao encerrada. Gerando novo QR Code...");
         await resetAuthState();
+        setTimeout(() => {
+          void initWhatsApp();
+        }, 3000);
+        return;
+      }
+      if (shouldReconnect) {
         await initWhatsApp();
       }
     }
