@@ -1530,7 +1530,7 @@ async function handlePendingDecision(
   socket: WASocket,
   to: string,
   threadId: string,
-  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "EMAIL_CONNECT_FLOW"; provider: "gmail" | "icloud"; stage: "await_email" | "await_password"; email?: string } | { type: "EMAIL_DELETE_SUGGEST"; items: Array<{ id: number; sender: string }> } | { type: "EMAIL_DELETE_CONFIRM"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "EMAIL_DELETE_PICK"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "OWNER_SETUP"; stage: "await_name" | "await_role" | "await_api_key" | "await_tone" } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
+  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "EMAIL_CONNECT_FLOW"; provider: "gmail" | "icloud"; stage: "await_email" | "await_password"; email?: string } | { type: "EMAIL_DELETE_SUGGEST"; items: Array<{ id: number; sender: string }> } | { type: "EMAIL_DELETE_CONFIRM"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "EMAIL_DELETE_PICK"; items: Array<{ id: number; sender: string; subject: string }> } | { type: "OWNER_SETUP"; stage: "await_name" | "await_role" | "await_api_key" | "await_tone" | "await_timezone" | "await_language" | "await_goals" } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
   decision: "confirm" | "cancel",
 ): Promise<void> {
   if (decision === "cancel") {
@@ -1941,7 +1941,7 @@ async function handleOwnerSetup(
   socket: WASocket,
   to: string,
   threadId: string,
-  pending: { type: "OWNER_SETUP"; stage: "await_name" | "await_role" | "await_api_key" | "await_tone" },
+  pending: { type: "OWNER_SETUP"; stage: "await_name" | "await_role" | "await_api_key" | "await_tone" | "await_timezone" | "await_language" | "await_goals" },
   text: string,
 ): Promise<boolean> {
   const value = text.trim();
@@ -2023,13 +2023,60 @@ async function handleOwnerSetup(
       await addMemoryItem("user_fact", "prefere tom casual");
     }
 
-    await clearPending(threadId);
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "await_timezone",
+      createdAt: new Date().toISOString(),
+    });
     await sendAndLog(
       socket,
       to,
       threadId,
-      "Prontinho. Setup concluido. Quer que eu te mostre o que consigo fazer?",
+      "Show. Qual seu fuso horario? (ex: Europe/London ou Sao Paulo)",
     );
+    return true;
+  }
+
+  if (pending.stage === "await_timezone") {
+    const tz = value;
+    await setTimezone(tz);
+    await addMemoryItem("user_fact", `fuso horario: ${tz}`);
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "await_language",
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(socket, to, threadId, "Qual idioma voce prefere no dia a dia?");
+    return true;
+  }
+
+  if (pending.stage === "await_language") {
+    await addMemoryItem("user_fact", `idioma preferido: ${value}`);
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "await_goals",
+      createdAt: new Date().toISOString(),
+    });
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "E quais sao seus objetivos principais com o Turion?",
+    );
+    return true;
+  }
+
+  if (pending.stage === "await_goals") {
+    await addMemoryItem("user_fact", `objetivos: ${value}`);
+    await clearPending(threadId);
+    const owner = await getOwnerState();
+    const name = owner?.owner_name ?? "por aqui";
+    const greeting = [
+      `Perfeito, ${name}.`,
+      "Setup finalizado. Agora eu cuido do resto pra voce.",
+      "Se quiser, posso te mostrar os primeiros comandos ou ja resolver algo agora.",
+    ].join("\n");
+    await sendAndLog(socket, to, threadId, greeting);
     return true;
   }
 
