@@ -1131,14 +1131,15 @@ async function handleBrain(
       } catch {
         status = "";
       }
-      if (status.includes("UPDATE_AVAILABLE")) {
+      const decision = resolveUpdateCheck(status);
+      if (decision.kind === "available") {
         await sendAndLog(socket, to, threadId, pickUpdateFoundMessage());
         const updateScript =
           process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
         await executeUpdate(socket, to, threadId, updateScript);
         return;
       }
-      if (status.includes("UP_TO_DATE")) {
+      if (decision.kind === "up_to_date") {
         await sendAndLog(
           socket,
           to,
@@ -1147,10 +1148,11 @@ async function handleBrain(
         );
         return;
       }
-      await sendAndLog(socket, to, threadId, "Nao consegui checar agora. Vou atualizar mesmo assim.");
-      const updateScript =
-        process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
-      await executeUpdate(socket, to, threadId, updateScript);
+      if (decision.kind === "error") {
+        await sendAndLog(socket, to, threadId, decision.message ?? "Nao consegui checar agora.");
+        return;
+      }
+      await sendAndLog(socket, to, threadId, "Nao consegui checar agora.");
       return;
     }
 
@@ -1163,14 +1165,15 @@ async function handleBrain(
       } catch {
         status = "";
       }
-      if (status.includes("UPDATE_AVAILABLE")) {
+      const decision = resolveUpdateCheck(status);
+      if (decision.kind === "available") {
         await sendAndLog(socket, to, threadId, pickUpdateFoundMessage());
         const updateScript =
           process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
         await executeUpdate(socket, to, threadId, updateScript);
         return;
       }
-      if (status.includes("UP_TO_DATE")) {
+      if (decision.kind === "up_to_date") {
         await sendAndLog(
           socket,
           to,
@@ -1179,10 +1182,11 @@ async function handleBrain(
         );
         return;
       }
-      await sendAndLog(socket, to, threadId, "Nao consegui validar o status agora. Vou atualizar mesmo assim.");
-      const updateScript =
-        process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
-      await executeUpdate(socket, to, threadId, updateScript);
+      if (decision.kind === "error") {
+        await sendAndLog(socket, to, threadId, decision.message ?? "Nao consegui validar o status agora.");
+        return;
+      }
+      await sendAndLog(socket, to, threadId, "Nao consegui validar o status agora.");
       return;
     }
 
@@ -1195,14 +1199,15 @@ async function handleBrain(
       } catch {
         status = "";
       }
-      if (status.includes("UPDATE_AVAILABLE")) {
+      const decision = resolveUpdateCheck(status);
+      if (decision.kind === "available") {
         await sendAndLog(socket, to, threadId, pickUpdateFoundMessage());
         const updateScript =
           process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
         await executeUpdate(socket, to, threadId, updateScript);
         return;
       }
-      if (status.includes("UP_TO_DATE")) {
+      if (decision.kind === "up_to_date") {
         await sendAndLog(
           socket,
           to,
@@ -1211,10 +1216,11 @@ async function handleBrain(
         );
         return;
       }
-      await sendAndLog(socket, to, threadId, "Nao consegui checar o status agora. Vou atualizar mesmo assim.");
-      const updateScript =
-        process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
-      await executeUpdate(socket, to, threadId, updateScript);
+      if (decision.kind === "error") {
+        await sendAndLog(socket, to, threadId, decision.message ?? "Nao consegui checar o status agora.");
+        return;
+      }
+      await sendAndLog(socket, to, threadId, "Nao consegui checar o status agora.");
       return;
     }
 
@@ -1603,6 +1609,27 @@ function parseUpdateStatusRequest(text: string): boolean {
     normalized.includes("?") ||
     normalized.includes("existe");
   return hasUpdate && hasQuestion;
+}
+
+function resolveUpdateCheck(status: string): { kind: "available" | "up_to_date" | "error" | "unknown"; message?: string } {
+  if (status.includes("UPDATE_AVAILABLE")) return { kind: "available" };
+  if (status.includes("UP_TO_DATE")) return { kind: "up_to_date" };
+  if (status.includes("GIT_NOT_FOUND")) {
+    return { kind: "error", message: "Git nao esta instalado no ambiente. Nao consigo checar update agora." };
+  }
+  if (status.includes("NOT_A_GIT_REPO")) {
+    return { kind: "error", message: "Nao encontrei um repositorio git configurado aqui." };
+  }
+  if (status.includes("NO_REMOTE")) {
+    return { kind: "error", message: "Repositorio sem remote origin configurado. Nao consigo checar update." };
+  }
+  if (status.includes("FETCH_FAILED")) {
+    return { kind: "error", message: "Falha ao buscar updates no remoto. Tente novamente mais tarde." };
+  }
+  if (status.includes("NO_REMOTE_MAIN")) {
+    return { kind: "error", message: "Nao encontrei origin/main no remoto." };
+  }
+  return { kind: "unknown" };
 }
 
 function parseUpdateCheckRequest(text: string): boolean {

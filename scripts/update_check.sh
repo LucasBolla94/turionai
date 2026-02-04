@@ -3,6 +3,11 @@ set -eu
 REPO_DIR="${1:-/app}"
 cd "$REPO_DIR"
 if ! command -v git >/dev/null 2>&1; then
+  if command -v apk >/dev/null 2>&1; then
+    apk add --no-cache git >/dev/null 2>&1 || true
+  fi
+fi
+if ! command -v git >/dev/null 2>&1; then
   echo "GIT_NOT_FOUND"
   exit 0
 fi
