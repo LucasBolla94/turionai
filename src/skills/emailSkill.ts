@@ -1,6 +1,7 @@
 import { Skill, SkillContext, SkillResult } from "./types";
 import { buildEmailConfig, loadEmailConfig, saveEmailConfig } from "../core/emailStore";
 import { listEmails, readEmail, sendEmail, deleteEmail, type EmailSummary } from "../core/emailClient";
+import { getTimezone } from "../core/timezone";
 import { draftEmailReply, explainEmail } from "../core/brain";
 
 export class EmailSkill implements Skill {
@@ -45,17 +46,57 @@ export class EmailSkill implements Skill {
         return { ok: true, output: "Nenhum email encontrado." };
       }
       const total = result.totalUnread;
+      const timeZone = await getTimezone();
       const header = unreadOnly
-        ? `📬 Nao lidos: ${total} (mostrando ${Math.min(limit, result.items.length)})`
-        : `📬 Emails: ${result.items.length}`;
+        ? "📬 Seus e-mails não lidos (5 mais recentes)"
+        : "📬 Seus e-mails (mais recentes)";
+      const separator = "────────────────────────";
       const output = result.items
-        .map((mail, index) => formatEmailLine(mail, index + 1))
-        .join("\n");
+        .map((mail, index) => formatEmailLine(mail, index + 1, timeZone))
+        .join("\n\n");
+
+      const important = result.items
+        .map((mail, index) => ({ mail, index: index + 1 }))
+        .filter(({ mail }) => computeEmailPriority(mail).importance === "alta");
+
+      const insight = important.length
+        ? [
+            "🧠 O que eu percebi:",
+            `👉 O e-mail #${important[0].mail.id} parece importante.`,
+            `Ele fala sobre: ${classifyEmailCategory(important[0].mail)}.`,
+          ].join("\n")
+        : "🧠 O que eu percebi:\n👉 Nenhum email parece urgente agora.";
+
       const more =
         unreadOnly && total > result.items.length
-          ? `\n…e mais ${total - result.items.length} nao lidos.`
+          ? `\n📨 Você ainda tem **+${total - result.items.length}** e-mails não lidos.`
           : "";
-      return { ok: true, output: `${header}\n${output}${more}` };
+
+      const footer = [
+        "O que você prefere agora?",
+        "1️⃣ Ler o e-mail importante",
+        "2️⃣ Ver mais e-mails",
+        "3️⃣ Filtrar só importantes",
+        "4️⃣ Ignorar newsletters/promos",
+      ].join("\n");
+
+      return {
+        ok: true,
+        output: [
+          header,
+          "",
+          separator,
+          output,
+          separator,
+          "",
+          insight,
+          more,
+          "",
+          footer,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      };
     }
 
     if (action === "read") {
@@ -149,13 +190,49 @@ function computeEmailPriority(mail: EmailSummary): { urgency: string; importance
   };
 }
 
-function formatEmailLine(mail: EmailSummary, index: number): string {
+function formatEmailLine(mail: EmailSummary, index: number, timeZone: string): string {
   const priority = computeEmailPriority(mail);
-  const badge = `(${priority.importance}/${priority.urgency})`;
+  const badge =
+    priority.importance === "alta" || priority.urgency === "alta"
+      ? " ⚠️ IMPORTANTE"
+      : "";
+  const time = formatTime(mail.date, timeZone);
   return [
-    `${index}) #${mail.id} ${badge}`,
-    `   De: ${mail.from}`,
-    `   Assunto: ${mail.subject}`,
-    `   Data: ${mail.date}`,
+    `${index}️⃣ #${mail.id}${badge}`,
+    `📌 Assunto: ${mail.subject}`,
+    `👤 De: ${simplifySender(mail.from)}`,
+    `🕒 Recebido: ${time}`,
   ].join("\n");
+}
+
+function simplifySender(value: string): string {
+  const match = value.match(/^(.*?)(<.*>)?$/);
+  if (!match) return value;
+  return match[1].trim().replace(/\"/g, "") || value;
+}
+
+function formatTime(value: string, timeZone: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const formatter = new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return formatter.format(date);
+}
+
+function classifyEmailCategory(mail: EmailSummary): string {
+  const from = `${mail.from}`.toLowerCase();
+  const subject = `${mail.subject}`.toLowerCase();
+  if (from.includes("apple") || subject.includes("password") || subject.includes("segurança")) {
+    return "segurança/conta";
+  }
+  if (from.includes("linkedin") || from.includes("indeed") || subject.includes("job")) {
+    return "oportunidades de trabalho";
+  }
+  if (subject.includes("promo") || subject.includes("oferta") || from.includes("marketing")) {
+    return "newsletter/promoções";
+  }
+  return "atualizações gerais";
 }
