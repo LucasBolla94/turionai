@@ -27,7 +27,7 @@
 
 ---
 
-## FASE 1 — Estrutura base do projeto (fundação)
+## FASE 1 — Estrutura base do projeto (fundação) ✅
 
 ### Objetivo
 Criar a estrutura do projeto sem funcionalidades, apenas para:
@@ -75,7 +75,7 @@ turion/
 
 ---
 
-## FASE 2 — Canal WhatsApp (conexão e estabilidade)
+## FASE 2 — Canal WhatsApp (conexão e estabilidade) ✅
 
 ### Objetivo
 Conectar no WhatsApp e **provar que mensagens chegam no servidor**.
