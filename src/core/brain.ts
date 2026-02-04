@@ -250,6 +250,19 @@ export async function explainEmailSecurity(input: string): Promise<string | null
   return content?.trim() || null;
 }
 
+export async function checkXaiHealth(): Promise<{ ok: boolean; message: string }> {
+  if (!process.env.XAI_API_KEY) {
+    return { ok: false, message: "XAI_API_KEY nÃ£o configurada." };
+  }
+  try {
+    await callXai("Voce eh um verificador.", "ping");
+    return { ok: true, message: "OK" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Falha desconhecida na API.";
+    return { ok: false, message };
+  }
+}
+
 export interface OnboardingAnswer {
   value: string;
   timezone?: string;

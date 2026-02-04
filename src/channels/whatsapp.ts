@@ -16,6 +16,7 @@ import { listScripts, runScript } from "../executor/executor";
 import { createCron, createCronNormalized, listCrons, pauseCron, removeCron } from "../core/cronManager";
 import os from "node:os";
 import {
+  checkXaiHealth,
   diagnoseLogs,
   explainEmailSecurity,
   interpretOnboardingAnswer,
@@ -1229,6 +1230,23 @@ async function handleBrain(
         return;
       }
 
+      if (parseApiStatusRequest(text)) {
+        const result = await checkXaiHealth();
+        if (result.ok) {
+          await sendAndLog(socket, to, threadId, "Sim, a API do Grok está respondendo normalmente.");
+        } else if (result.message.includes("XAI_API_KEY")) {
+          await sendAndLog(
+            socket,
+            to,
+            threadId,
+            "Ainda nao tenho a XAI_API_KEY configurada. Me envie a chave e eu valido na hora.",
+          );
+        } else {
+          await sendAndLog(socket, to, threadId, `A API não respondeu: ${result.message}`);
+        }
+        return;
+      }
+
       if (parseModelUpdateQuestion(text)) {
         await sendAndLog(socket, to, threadId, buildModelUpdateExplanation());
         return;
@@ -1742,11 +1760,23 @@ function buildModelUpdateExplanation(): string {
   const model = process.env.TURION_XAI_MODEL || "grok-4-1-fast-reasoning";
   return [
     "O modelo (Grok) é um serviço externo: eu não faço update dele localmente.",
-    `Modelo configurado agora: ${model}.`,
+    `"`"Modelo configurado agora: ${model}.`"`",
     "Se quiser trocar, me diga o modelo exato e eu ajusto a configuracao.",
   ].join("\n");
 }
 
+function parseApiStatusRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  const hasApi = normalized.includes("api") || normalized.includes("xai") || normalized.includes("grok");
+  const hasCheck =
+    normalized.includes("conect") ||
+    normalized.includes("ok") ||
+    normalized.includes("funcion") ||
+    normalized.includes("respond") ||
+    normalized.includes("status");
+  return hasApi && hasCheck;
+}
 function resolveUpdateCheck(status: string): { kind: "available" | "up_to_date" | "error" | "unknown"; message?: string } {
   if (status.includes("UPDATE_AVAILABLE")) return { kind: "available" };
   if (status.includes("UP_TO_DATE")) return { kind: "up_to_date" };
@@ -2914,4 +2944,6 @@ async function executeUpdate(
     await sendAndLog(socket, to, threadId, `${summary} Reiniciando... Ja volto.`);
   setTimeout(() => process.exit(0), 1000);
 }
+
+
 
