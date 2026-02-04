@@ -17,9 +17,19 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 cd "$REPO_DIR"
+if [ ! -d ".git" ]; then
+  echo "Repositorio nao encontrado em $REPO_DIR (.git ausente)."
+  exit 1
+fi
 
 REMOTE_URL="$(git config --get remote.origin.url || true)"
 echo "Remote: $REMOTE_URL"
+if [ -z "$REMOTE_URL" ]; then
+  echo "Remote vazio. Configurando origin..."
+  git remote add origin "$EXPECTED_URL_1" || true
+  REMOTE_URL="$(git config --get remote.origin.url || true)"
+  echo "Remote: $REMOTE_URL"
+fi
 if [ "$REMOTE_URL" != "$EXPECTED_URL_1" ] && [ "$REMOTE_URL" != "$EXPECTED_URL_2" ] && [ "$REMOTE_URL" != "$EXPECTED_URL_3" ]; then
   echo "Remote inesperado: $REMOTE_URL"
   exit 1
