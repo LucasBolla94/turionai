@@ -169,5 +169,5 @@ fi
 echo "[Tur] Subindo container..."
 run_compose up -d
 
-echo "[Tur] Pronto. Logs:"
-echo "docker compose logs -f  (ou docker-compose logs -f)"
+echo "[Tur] Pronto. Abrindo logs para QR Code (Ctrl+C para sair)..."
+run_compose logs -f
