@@ -36,23 +36,45 @@ async function savePrefs(prefs: UserPreferences): Promise<void> {
 
 export async function updatePreferencesFromMessage(text: string): Promise<void> {
   const prefs = await loadPrefs();
-  const length = text.trim().length;
-  if (length <= 30) prefs.avg_message_length = "short";
-  else if (length >= 120) prefs.avg_message_length = "long";
-  else prefs.avg_message_length = "medium";
-
-  const hasEmoji = /[\u{1F300}-\u{1FAFF}]/u.test(text);
-  prefs.emoji_usage = hasEmoji ? true : prefs.emoji_usage;
-
   const lower = text.toLowerCase();
+  let changed = false;
+
+  if (lower.includes("responde curto") || lower.includes("mais curto")) {
+    prefs.avg_message_length = "short";
+    changed = true;
+  }
+  if (lower.includes("responde longo") || lower.includes("mais longo") || lower.includes("detalha")) {
+    prefs.avg_message_length = "long";
+    changed = true;
+  }
+  if (lower.includes("sem emoji") || lower.includes("nao usa emoji")) {
+    prefs.emoji_usage = false;
+    changed = true;
+  }
+  if (lower.includes("pode usar emoji") || lower.includes("com emoji")) {
+    prefs.emoji_usage = true;
+    changed = true;
+  }
+  if (lower.includes("mais formal")) {
+    prefs.formality = "formal";
+    changed = true;
+  }
+  if (lower.includes("mais casual") || lower.includes("mais informal")) {
+    prefs.formality = "casual";
+    changed = true;
+  }
+
   const phrases = ["blz", "beleza", "fechado", "manda bala", "top", "valeu"];
   for (const phrase of phrases) {
     if (lower.includes(phrase) && !prefs.common_phrases.includes(phrase)) {
       prefs.common_phrases.push(phrase);
+      changed = true;
     }
   }
 
-  await savePrefs(prefs);
+  if (changed) {
+    await savePrefs(prefs);
+  }
 }
 
 export async function getPreferences(): Promise<UserPreferences> {

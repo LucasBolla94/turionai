@@ -55,17 +55,17 @@ export async function runMemoryOrganizer(): Promise<void> {
     return;
   }
 
-  for (const fact of result.new_memories.facts ?? []) {
-    await addMemoryItem("fact", fact.text, fact.keywords ?? [], fact.weight ?? 0.6);
+  for (const fact of result.new_memories.user_facts ?? []) {
+    await addMemoryItem("user_fact", fact.text, fact.keywords ?? [], fact.weight ?? 0.6);
+  }
+  for (const fact of result.new_memories.project_facts ?? []) {
+    await addMemoryItem("project_fact", fact.text, fact.keywords ?? [], fact.weight ?? 0.7);
   }
   for (const decision of result.new_memories.decisions ?? []) {
     await addMemoryItem("decision", decision.text, decision.keywords ?? [], decision.weight ?? 0.8);
   }
-  for (const preference of result.new_memories.preferences ?? []) {
-    await addMemoryItem("preference", preference.text, preference.keywords ?? [], preference.weight ?? 0.6);
-  }
-  for (const task of result.new_memories.tasks ?? []) {
-    await addMemoryItem("task", task.text, task.keywords ?? [], task.weight ?? 0.6);
+  for (const task of result.new_memories.running_tasks ?? []) {
+    await addMemoryItem("running_task", task.text, task.keywords ?? [], task.weight ?? 0.6);
   }
   for (const project of result.new_memories.projects ?? []) {
     await upsertProjectMemoryPartial({

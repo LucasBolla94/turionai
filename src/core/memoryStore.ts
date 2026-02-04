@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
-export type MemoryType = "fact" | "decision" | "preference" | "task";
+export type MemoryType = "user_fact" | "project_fact" | "decision" | "running_task";
 
 export interface MemoryItem {
   id: string;
@@ -14,9 +14,9 @@ export interface MemoryItem {
   updated_at: string;
 }
 
-export interface MemoryProject {
+export interface ProjectFact {
   id: string;
-  type: "project";
+  type: "project_fact";
   name: string;
   repo_url: string;
   path: string;
@@ -31,11 +31,10 @@ export interface MemoryProject {
 }
 
 interface MemoryFile {
-  facts: MemoryItem[];
+  user_facts: MemoryItem[];
+  project_facts: Array<ProjectFact | MemoryItem>;
   decisions: MemoryItem[];
-  projects: MemoryProject[];
-  preferences: MemoryItem[];
-  tasks: MemoryItem[];
+  running_tasks: MemoryItem[];
   meta: { last_updated: string };
 }
 
@@ -44,16 +43,19 @@ const MEMORY_PATH = resolve(MEMORY_DIR, "memory.json");
 const INDEX_PATH = resolve(MEMORY_DIR, "keyword_index.json");
 
 const EMPTY_MEMORY: MemoryFile = {
-  facts: [],
+  user_facts: [],
+  project_facts: [],
   decisions: [],
-  projects: [],
-  preferences: [],
-  tasks: [],
+  running_tasks: [],
   meta: { last_updated: new Date().toISOString() },
 };
 
 function normalizeKeyword(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9._+-]+/g, "").trim();
+}
+
+function isProjectFact(item: ProjectFact | MemoryItem): item is ProjectFact {
+  return "name" in item;
 }
 
 function extractKeywords(text: string): string[] {
@@ -78,7 +80,41 @@ function mergeKeywords(existing: string[], incoming: string[]): string[] {
 async function loadMemory(): Promise<MemoryFile> {
   try {
     const data = await readFile(MEMORY_PATH, "utf8");
-    return JSON.parse(data) as MemoryFile;
+    const parsed = JSON.parse(data) as Partial<MemoryFile> & {
+      facts?: MemoryItem[];
+      preferences?: MemoryItem[];
+      tasks?: MemoryItem[];
+      projects?: ProjectFact[];
+    };
+    if (parsed.user_facts || parsed.project_facts || parsed.running_tasks) {
+      return {
+        user_facts: parsed.user_facts ?? [],
+        project_facts: parsed.project_facts ?? [],
+        decisions: parsed.decisions ?? [],
+        running_tasks: parsed.running_tasks ?? [],
+        meta: parsed.meta ?? { last_updated: new Date().toISOString() },
+      };
+    }
+    const migrated: MemoryFile = {
+      user_facts: [...(parsed.facts ?? []), ...(parsed.preferences ?? [])].map((item) => ({
+        ...item,
+        type: "user_fact",
+      })),
+      project_facts: (parsed.projects ?? []).map((item) => ({
+        ...item,
+        type: "project_fact",
+      })),
+      decisions: (parsed.decisions ?? []).map((item) => ({
+        ...item,
+        type: "decision",
+      })),
+      running_tasks: (parsed.tasks ?? []).map((item) => ({
+        ...item,
+        type: "running_task",
+      })),
+      meta: parsed.meta ?? { last_updated: new Date().toISOString() },
+    };
+    return migrated;
   } catch {
     return { ...EMPTY_MEMORY };
   }
@@ -122,12 +158,11 @@ function addToIndex(
 
 function buildIndex(memory: MemoryFile): Record<string, string[]> {
   const index: Record<string, string[]> = {};
-  const items: Array<MemoryItem | MemoryProject> = [
-    ...memory.facts,
+  const items: Array<MemoryItem | ProjectFact> = [
+    ...memory.user_facts,
+    ...memory.project_facts,
     ...memory.decisions,
-    ...memory.preferences,
-    ...memory.tasks,
-    ...memory.projects,
+    ...memory.running_tasks,
   ];
   for (const item of items) {
     addToIndex(index, item.keywords ?? [], item.id);
@@ -136,10 +171,14 @@ function buildIndex(memory: MemoryFile): Record<string, string[]> {
 }
 
 function getList(memory: MemoryFile, type: MemoryType): MemoryItem[] {
-  if (type === "fact") return memory.facts;
+  if (type === "user_fact") return memory.user_facts;
+  if (type === "project_fact") {
+    return memory.project_facts.filter(
+      (item): item is MemoryItem => !("name" in item),
+    );
+  }
   if (type === "decision") return memory.decisions;
-  if (type === "preference") return memory.preferences;
-  return memory.tasks;
+  return memory.running_tasks;
 }
 
 export async function addMemoryItem(
@@ -150,7 +189,10 @@ export async function addMemoryItem(
 ): Promise<MemoryItem> {
   const memory = await loadMemory();
   const index = await loadIndex();
-  const list = getList(memory, type);
+  const list =
+    type === "project_fact"
+      ? memory.project_facts.filter((item): item is MemoryItem => !("name" in item))
+      : getList(memory, type);
   const normalizedText = text.trim().toLowerCase();
   const existing = list.find((item) => item.text.toLowerCase() === normalizedText);
 
@@ -177,7 +219,11 @@ export async function addMemoryItem(
     created_at: now,
     updated_at: now,
   };
-  list.push(item);
+  if (type === "project_fact") {
+    memory.project_facts.push(item);
+  } else {
+    list.push(item);
+  }
   addToIndex(index, item.keywords, item.id);
   await saveMemory(memory);
   await saveIndex(index);
@@ -195,7 +241,9 @@ export async function upsertProjectMemory(project: {
 }): Promise<void> {
   const memory = await loadMemory();
   const index = await loadIndex();
-  const existing = memory.projects.find((item) => item.name === project.name);
+  const existing = memory.project_facts.find(
+    (item): item is ProjectFact => isProjectFact(item) && item.name === project.name,
+  );
   const baseKeywords = [
     project.name,
     project.repo_url,
@@ -219,9 +267,9 @@ export async function upsertProjectMemory(project: {
     existing.updated_at = now;
     addToIndex(index, existing.keywords, existing.id);
   } else {
-    const item: MemoryProject = {
+    const item: ProjectFact = {
       id: `project_${randomUUID()}`,
-      type: "project",
+      type: "project_fact",
       name: project.name,
       repo_url: project.repo_url,
       path: project.path,
@@ -234,7 +282,7 @@ export async function upsertProjectMemory(project: {
       created_at: now,
       updated_at: now,
     };
-    memory.projects.push(item);
+    memory.project_facts.push(item);
     addToIndex(index, item.keywords, item.id);
   }
 
@@ -256,7 +304,9 @@ export async function upsertProjectMemoryPartial(project: {
 }): Promise<void> {
   const memory = await loadMemory();
   const index = await loadIndex();
-  const existing = memory.projects.find((item) => item.name === project.name);
+  const existing = memory.project_facts.find(
+    (item): item is ProjectFact => isProjectFact(item) && item.name === project.name,
+  );
   const now = new Date().toISOString();
   const mergedKeywords = mergeKeywords(
     existing?.keywords ?? [],
@@ -275,9 +325,9 @@ export async function upsertProjectMemoryPartial(project: {
     existing.updated_at = now;
     addToIndex(index, existing.keywords, existing.id);
   } else {
-    const item: MemoryProject = {
+    const item: ProjectFact = {
       id: `project_${randomUUID()}`,
-      type: "project",
+      type: "project_fact",
       name: project.name,
       repo_url: project.repo_url ?? "",
       path: project.path ?? "",
@@ -290,7 +340,7 @@ export async function upsertProjectMemoryPartial(project: {
       created_at: now,
       updated_at: now,
     };
-    memory.projects.push(item);
+    memory.project_facts.push(item);
     addToIndex(index, item.keywords, item.id);
   }
 
@@ -303,16 +353,18 @@ export async function updateProjectMemory(
   patch: Record<string, unknown>,
 ): Promise<void> {
   const memory = await loadMemory();
-  const project = memory.projects.find((item) => item.name === name);
+  const project = memory.project_facts.find(
+    (item): item is ProjectFact => isProjectFact(item) && item.name === name,
+  );
   const now = new Date().toISOString();
   if (!project) {
     await upsertProjectMemoryPartial({ name });
     return;
   }
 
-  const updated = { ...project, ...patch, updated_at: now } as MemoryProject;
-  const index = memory.projects.findIndex((item) => item.id === project.id);
-  memory.projects[index] = updated;
+  const updated = { ...project, ...patch, updated_at: now } as ProjectFact;
+  const index = memory.project_facts.findIndex((item) => item.id === project.id);
+  memory.project_facts[index] = updated;
   updated.keywords = mergeKeywords(updated.keywords, extractKeywords(updated.name));
   await saveMemory(memory);
   await saveIndex(buildIndex(memory));
@@ -322,10 +374,15 @@ export async function removeMemoryByText(text: string): Promise<void> {
   const memory = await loadMemory();
   const target = text.trim().toLowerCase();
   const filterByText = (item: MemoryItem) => item.text.toLowerCase() !== target;
-  memory.facts = memory.facts.filter(filterByText);
+  memory.user_facts = memory.user_facts.filter(filterByText);
   memory.decisions = memory.decisions.filter(filterByText);
-  memory.preferences = memory.preferences.filter(filterByText);
-  memory.tasks = memory.tasks.filter(filterByText);
+  memory.running_tasks = memory.running_tasks.filter(filterByText);
+  memory.project_facts = memory.project_facts.filter((item) => {
+    if (isProjectFact(item)) {
+      return item.name.toLowerCase() !== target && item.repo_url.toLowerCase() !== target;
+    }
+    return item.text.toLowerCase() !== target;
+  });
   await saveMemory(memory);
   await saveIndex(buildIndex(memory));
 }
@@ -333,7 +390,7 @@ export async function removeMemoryByText(text: string): Promise<void> {
 export async function searchMemoryByKeywords(
   keywords: string[],
   limit = 6,
-): Promise<Array<MemoryItem | MemoryProject>> {
+): Promise<Array<MemoryItem | ProjectFact>> {
   const normalized = keywords.map(normalizeKeyword).filter(Boolean);
   if (normalized.length === 0) return [];
   const memory = await loadMemory();
@@ -346,17 +403,16 @@ export async function searchMemoryByKeywords(
     }
   }
 
-  const allItems: Array<MemoryItem | MemoryProject> = [
-    ...memory.facts,
+  const allItems: Array<MemoryItem | ProjectFact> = [
+    ...memory.user_facts,
+    ...memory.project_facts,
     ...memory.decisions,
-    ...memory.preferences,
-    ...memory.tasks,
-    ...memory.projects,
+    ...memory.running_tasks,
   ];
   const byId = new Map(allItems.map((item) => [item.id, item]));
   const results = Array.from(idSet)
     .map((id) => byId.get(id))
-    .filter((item): item is MemoryItem | MemoryProject => Boolean(item));
+    .filter((item): item is MemoryItem | ProjectFact => Boolean(item));
 
   results.sort((a, b) => {
     if (b.weight !== a.weight) return b.weight - a.weight;
@@ -374,7 +430,7 @@ export async function buildMemoryContext(text: string): Promise<string> {
   const lines = results.map((item) => {
     if ("name" in item) {
       const domains = item.domains.length ? ` | domains: ${item.domains.join(",")}` : "";
-      return `- [project] ${item.name} | ${item.repo_url}${domains}`;
+      return `- [project_fact] ${item.name} | ${item.repo_url}${domains}`;
     }
     return `- [${item.type}] ${item.text}`;
   });

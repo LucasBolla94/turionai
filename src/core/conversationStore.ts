@@ -9,6 +9,13 @@ export interface ConversationEntry {
   text: string;
 }
 
+export interface DigestSummary {
+  summary: string;
+  current_goal: string;
+  last_action: string;
+  next_step: string;
+}
+
 const CONV_DIR = resolve("state", "conversations");
 const DIGEST_DIR = resolve("state", "digests");
 
@@ -37,14 +44,14 @@ export async function readRecentConversation(threadId: string, limit: number): P
   }
 }
 
-export async function appendDigest(threadId: string, summary: string): Promise<void> {
+export async function appendDigest(threadId: string, summary: DigestSummary): Promise<void> {
   const date = dayKey();
   const filePath = resolve(DIGEST_DIR, `${date}.json`);
   await mkdir(DIGEST_DIR, { recursive: true });
-  let existing: Array<{ thread: string; summary: string; ts: string }> = [];
+  let existing: Array<{ thread: string; summary: DigestSummary; ts: string }> = [];
   try {
     const current = await readFile(filePath, "utf8");
-    existing = JSON.parse(current) as Array<{ thread: string; summary: string; ts: string }>;
+    existing = JSON.parse(current) as Array<{ thread: string; summary: DigestSummary; ts: string }>;
   } catch {
     existing = [];
   }
@@ -52,11 +59,11 @@ export async function appendDigest(threadId: string, summary: string): Promise<v
   await writeFile(filePath, JSON.stringify(existing, null, 2), "utf8");
 }
 
-export async function readLatestDigest(threadId: string): Promise<string | null> {
+export async function readLatestDigest(threadId: string): Promise<DigestSummary | null> {
   const filePath = resolve(DIGEST_DIR, `${dayKey()}.json`);
   try {
     const current = await readFile(filePath, "utf8");
-    const entries = JSON.parse(current) as Array<{ thread: string; summary: string }>;
+    const entries = JSON.parse(current) as Array<{ thread: string; summary: DigestSummary }>;
     const filtered = entries.filter((entry) => entry.thread === threadId);
     if (filtered.length === 0) return null;
     return filtered[filtered.length - 1]?.summary ?? null;

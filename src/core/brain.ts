@@ -70,12 +70,17 @@ export interface DiagnoseResult {
 }
 
 export interface OrganizerResult {
-  digest: string;
+  digest: {
+    summary: string;
+    current_goal: string;
+    last_action: string;
+    next_step: string;
+  };
   new_memories: {
-    facts: Array<{ text: string; keywords?: string[]; weight?: number }>;
+    user_facts: Array<{ text: string; keywords?: string[]; weight?: number }>;
+    project_facts: Array<{ text: string; keywords?: string[]; weight?: number }>;
     decisions: Array<{ text: string; keywords?: string[]; weight?: number }>;
-    preferences: Array<{ text: string; keywords?: string[]; weight?: number }>;
-    tasks: Array<{ text: string; keywords?: string[]; weight?: number }>;
+    running_tasks: Array<{ text: string; keywords?: string[]; weight?: number }>;
     projects: Array<{
       name: string;
       repo_url?: string;
@@ -102,11 +107,26 @@ function extractJson(text: string): BrainResult | null {
   }
 }
 
+function extractJsonGeneric<T>(text: string): T | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  const snippet = text.slice(start, end + 1);
+  try {
+    return JSON.parse(snippet) as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function interpretStrictJson(input: string): Promise<BrainResult | null> {
   const system = [
     "Seu nome é Tur.",
     "Você é o interpretador do Turion (assistente DevOps).",
-    "Personalidade: positiva, amigável e solidária; calma, paciente e respeitosa; fala natural e próxima; explica com clareza; adapta o tom ao contexto.",
+    "Fale de forma humana, curta e clara, sem parecer robô.",
+    "Estilo padrão: amigável e profissional. Nada de explicação excessiva.",
+    "Use no máximo 1 emoji e só se o usuário estiver informal.",
+    "Estrutura obrigatória do reply: (1) uma linha curta de reconhecimento, (2) resposta direta, (3) até 3 bullets se ajudar, (4) um exemplo quando explicar sistemas, (5) uma pergunta ou próximo passo.",
     "Retorne APENAS JSON válido e nada mais.",
     "Chaves obrigatórias: reply, intent, args, needs_confirmation, questions, risk, action, plan, missing.",
     "Chave opcional: actions (array).",
@@ -146,15 +166,29 @@ export async function diagnoseLogs(input: string): Promise<DiagnoseResult | null
   return extractJson(content) as DiagnoseResult | null;
 }
 
-export async function summarizeConversation(input: string): Promise<string | null> {
+export async function summarizeConversation(input: string): Promise<{
+  summary: string;
+  current_goal: string;
+  last_action: string;
+  next_step: string;
+} | null> {
   const system = [
     "Você é Tur, assistente DevOps.",
-    "Resuma a conversa em até 3 frases, em português.",
-    "Se houver ações pendentes, mencione.",
+    "Resuma a conversa em JSON estrito.",
+    "Campos obrigatórios: summary, current_goal, last_action, next_step.",
+    "summary: até 5 linhas, curto.",
+    "current_goal: o objetivo atual do usuário.",
+    "last_action: a última ação feita.",
+    "next_step: o próximo passo lógico (ou vazio).",
   ].join(" ");
 
   const content = await callXai(system, input);
-  return content?.trim() || null;
+  return extractJsonGeneric<{
+    summary: string;
+    current_goal: string;
+    last_action: string;
+    next_step: string;
+  }>(content);
 }
 
 export async function organizeMemory(input: string): Promise<OrganizerResult | null> {
@@ -163,12 +197,12 @@ export async function organizeMemory(input: string): Promise<OrganizerResult | n
     "Tarefa: organizar memória útil a partir de conversas recentes.",
     "Responda APENAS JSON válido.",
     "Não invente dados. Seja conservador.",
-    "Memória útil: fatos, decisões, preferências, tarefas e projetos.",
+    "Memória útil: user_facts, project_facts, decisions, running_tasks e projetos.",
     "Evite duplicatas (use dedupe quando necessário).",
     "Formato obrigatório:",
     "{",
-    '"digest":"...",',
-    '"new_memories":{"facts":[{text,keywords?,weight?}],"decisions":[...],"preferences":[...],"tasks":[...],"projects":[{name,repo_url?,domains?,notes?,keywords?,weight?}]},',
+    '"digest":{"summary":"...","current_goal":"...","last_action":"...","next_step":"..."},',
+    '"new_memories":{"user_facts":[{text,keywords?,weight?}],"project_facts":[{text,keywords?,weight?}],"decisions":[...],"running_tasks":[...],"projects":[{name,repo_url?,domains?,notes?,keywords?,weight?}]},',
     '"updates":[{type:"project",match:"name",patch:{...}}],',
     '"dedupe":[{drop_text:"...",keep_text:"..."}],',
     '"keyword_index_updates":{"keyword":["id_or_hint"]}',
@@ -176,7 +210,7 @@ export async function organizeMemory(input: string): Promise<OrganizerResult | n
   ].join(" ");
 
   const content = await callXai(system, input);
-  return extractJson(content) as OrganizerResult | null;
+  return extractJsonGeneric<OrganizerResult>(content);
 }
 
 export async function explainEmail(input: string): Promise<string | null> {

@@ -156,8 +156,11 @@ export async function initWhatsApp(): Promise<WASocket> {
       await recordInteraction(threadId, from);
       await updatePreferencesFromMessage(text).catch(() => undefined);
       await touchEmotionState().catch(() => undefined);
-      const feedbackProfile = await applyFeedback(text);
-      if (feedbackProfile) {
+      const feedback = await applyFeedback(text);
+      if (feedback) {
+        if (feedback.memoryText) {
+          await addMemoryItem("user_fact", feedback.memoryText);
+        }
         await sendAndLog(socket, from, threadId, "Fechado. Vou ajustar meu jeito de responder.");
         continue;
       }
@@ -641,19 +644,29 @@ async function handleCommand(
         socket,
         to,
         threadId,
-        "Uso: memory add <fact|decision|preference|task> <texto> | memory search <keywords>",
+        "Uso: memory add <user_fact|project_fact|decision|running_task> <texto> | memory search <keywords>",
       );
       return;
     }
     if (action === "add") {
-      const type = args[1] as "fact" | "decision" | "preference" | "task" | undefined;
+      const rawType = (args[1] ?? "").toLowerCase();
+      const typeMap: Record<string, "user_fact" | "project_fact" | "decision" | "running_task"> = {
+        fact: "user_fact",
+        preference: "user_fact",
+        user_fact: "user_fact",
+        project_fact: "project_fact",
+        decision: "decision",
+        task: "running_task",
+        running_task: "running_task",
+      };
+      const type = typeMap[rawType];
       const textValue = args.slice(2).join(" ");
       if (!type || !textValue) {
         await sendAndLog(
           socket,
           to,
           threadId,
-          "Uso: memory add <fact|decision|preference|task> <texto>",
+          "Uso: memory add <user_fact|project_fact|decision|running_task> <texto>",
         );
         return;
       }
@@ -675,7 +688,7 @@ async function handleCommand(
       const response = results
         .map((item) => {
           if ("name" in item) {
-            return `- [project] ${item.name} | ${item.repo_url}`;
+            return `- [project_fact] ${item.name} | ${item.repo_url}`;
           }
           return `- [${item.type}] ${item.text}`;
         })
@@ -1019,7 +1032,15 @@ async function handleBrain(
     const now = new Date().toISOString();
     const parts: string[] = [];
     parts.push(`Agora: ${now} (${timezone})`);
-    if (digest) parts.push(`Resumo da thread: ${digest}`);
+    if (digest) {
+      const digestLine = [
+        `Resumo: ${digest.summary}`,
+        `Objetivo atual: ${digest.current_goal}`,
+        `Ultima acao: ${digest.last_action}`,
+        `Proximo passo: ${digest.next_step}`,
+      ].join(" | ");
+      parts.push(`Resumo da thread: ${digestLine}`);
+    }
     if (recent.length) parts.push(`Ultimas mensagens:\n${recent.join("\n")}`);
     if (memoryContext) parts.push(memoryContext);
     parts.push(`Mensagem: ${text}`);
@@ -1030,7 +1051,8 @@ async function handleBrain(
       return;
     }
     if (result.reply) {
-      await sendAndLog(socket, to, threadId, result.reply);
+      const structured = enforceResponseStructure(result.reply);
+      await sendAndLog(socket, to, threadId, structured);
     } else {
       const responseLines = [
         `Intent: ${result.intent}`,
@@ -1869,6 +1891,21 @@ function buildEmailPickPrompt(items: Array<{ id: number; sender: string; subject
 function shortEmailSubject(value: string): string {
   if (value.length <= 50) return value;
   return `${value.slice(0, 47)}...`;
+}
+
+function enforceResponseStructure(reply: string): string {
+  const cleaned = reply.trim();
+  if (!cleaned) return reply;
+  const lines = cleaned.split(/\r?\n/).filter(Boolean);
+  const ackPattern = /^(ok|certo|entendi|beleza|claro|perfeito|feito|tranquilo|vamos|bom|pronto)/i;
+  if (!ackPattern.test(lines[0])) {
+    lines.unshift("Entendi.");
+  }
+  const hasQuestion = lines.some((line) => line.trim().endsWith("?"));
+  if (!hasQuestion) {
+    lines.push("Quer que eu siga?");
+  }
+  return lines.join("\n");
 }
 
 function normalizeEmailArgs(
