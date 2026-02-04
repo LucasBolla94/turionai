@@ -21,7 +21,7 @@ const COMMAND_KEYWORDS = new Set([
   "logs",
   "diagnose",
   "run",
-  "update",
+  "--update",
   "list",
   "help",
 ]);
@@ -52,6 +52,11 @@ export function classifyMessage(context: MessageContext): MessageResult {
 
   if (firstToken.startsWith("/")) {
     const command = firstToken.slice(1);
+    return { intent: "COMMAND", command, args: rest };
+  }
+
+  if (firstToken.startsWith("--")) {
+    const command = firstToken.slice(2);
     return { intent: "COMMAND", command, args: rest };
   }
 

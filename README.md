@@ -154,7 +154,7 @@ Plan Runner:
 ## Atualização do Turion (self-update)
 
 Comando:
-- `update`
+- `--update`
 
 Regras de segurança:
 - somente se o remote for `git@github.com:LucasBolla94/turionai.git`
