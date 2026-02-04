@@ -739,6 +739,50 @@ async function handleBrain(
       return;
     }
 
+    if (parseUpdateCheckRequest(text)) {
+      const checkScript =
+        process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
+      let status = "";
+      try {
+        status = await runScript(checkScript);
+      } catch {
+        status = "";
+      }
+      if (status.includes("UPDATE_AVAILABLE")) {
+        await setPending(threadId, {
+          type: "RUN_UPDATE",
+          createdAt: new Date().toISOString(),
+        });
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Achei um update novo agora. Quer que eu atualize? (confirmar/cancelar)",
+        );
+        return;
+      }
+      if (status.includes("UP_TO_DATE")) {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Chequei de novo e continua tudo atualizado por aqui.",
+        );
+        return;
+      }
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Nao consegui checar agora. Quer que eu tente atualizar mesmo assim?",
+      );
+      await setPending(threadId, {
+        type: "RUN_UPDATE",
+        createdAt: new Date().toISOString(),
+      });
+      return;
+    }
+
     if (parseUpdateRequest(text)) {
       const checkScript =
         process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
@@ -1140,14 +1184,22 @@ function parseUpdateRequest(text: string): boolean {
     normalized.includes("atualiz") ||
     normalized.includes("update") ||
     normalized.includes("faz o update") ||
-    normalized.includes("fazer update");
+    normalized.includes("fazer update") ||
+    normalized.includes("forca o update") ||
+    normalized.includes("forçar o update") ||
+    normalized.includes("mesmo assim");
   const hasTarget =
     normalized.includes("turion") ||
     normalized.includes("sistema") ||
     normalized.includes("bot") ||
     normalized.includes("agente") ||
     normalized.includes("modelo");
-  return hasUpdate && (hasTarget || normalized.length < 20);
+  const hasVerb =
+    normalized.includes("faz") ||
+    normalized.includes("fazer") ||
+    normalized.includes("forca") ||
+    normalized.includes("forçar");
+  return hasUpdate && (hasTarget || hasVerb || normalized.length < 20);
 }
 
 function parseUpdateStatusRequest(text: string): boolean {
@@ -1160,6 +1212,16 @@ function parseUpdateStatusRequest(text: string): boolean {
     normalized.includes("?") ||
     normalized.includes("existe");
   return hasUpdate && hasQuestion;
+}
+
+function parseUpdateCheckRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized.includes("checa de novo") ||
+    normalized.includes("checar de novo") ||
+    normalized.includes("verifica de novo")
+  );
 }
 
 function parseGitStatusRequest(text: string): boolean {
