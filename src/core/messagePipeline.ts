@@ -16,8 +16,10 @@ export interface MessageResult {
 const COMMAND_KEYWORDS = new Set([
   "status",
   "deploy",
+  "redeploy",
   "cron",
   "logs",
+  "diagnose",
   "run",
   "list",
   "help",
