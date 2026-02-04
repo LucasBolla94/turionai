@@ -1225,3 +1225,10 @@ Resultado esperado
 
 PRINCÍPIO MANTIDO
 IA interpreta → Turion decide → Skill executa → Executor limitado → AuditLog registra
+
+
+### FASE 17 ? Integra??o GitHub (SSH Deploy Key, Clone/Pull) ?
+
+- git setup/test/clone/pull implementados
+- scripts whitelisted
+- fluxo via WhatsApp
