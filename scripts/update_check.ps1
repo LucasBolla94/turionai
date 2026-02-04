@@ -1,7 +1,7 @@
-param(
-  [string]$RepoDir = "C:\\app"
-)
+param([string]$RepoDir = "")
 $ErrorActionPreference = "Stop"
+if (-not $RepoDir) { $RepoDir = $env:TURION_REPO_DIR }
+if (-not $RepoDir) { $RepoDir = "C:\\Users\\lucas\\Documents\\OpenTur" }
 Set-Location $RepoDir
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
   Write-Output "GIT_NOT_FOUND"

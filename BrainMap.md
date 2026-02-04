@@ -123,7 +123,10 @@ Arquivos:
 - `src/core/updateStatus.ts`
 - `src/channels/whatsapp.ts`
 
-Cron automático checa updates a cada 10 minutos.
+Cron automático checa updates a cada 5 minutos.
+O cron de update é tratado como essencial: na inicialização ele é validado,
+recriado se faltar e normalizado para evitar duplicação.
+Quando o usuário pergunta sobre update do modelo (Grok), o bot explica que é um serviço externo e mostra o modelo configurado.
 
 ## 4) Arquivos importantes
 - `docker-compose.yml` ? container principal
@@ -176,3 +179,5 @@ Como funciona:
 - O CronSkill recebe schedule (ISO-8601 ou cron).
 - Se for ISO-8601, calcula o tempo relativo (minutos/horas/dias) para montar {tempo}.
 - Se nao for ISO, usa "no horario combinado".
+
+

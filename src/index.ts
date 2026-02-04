@@ -1,3 +1,4 @@
+import "./core/env";
 import { setInterval } from "node:timers";
 import { initWhatsApp } from "./channels/whatsapp";
 import { initCronManager } from "./core/cronManager";

@@ -17,6 +17,8 @@ export interface CronJob {
 
 const CRON_DIR = resolve("state", "crons");
 const CRON_STATE_PATH = resolve(CRON_DIR, "crons.json");
+const UPDATE_CHECK_NAME = "update_check_5m";
+const UPDATE_CHECK_SCHEDULE = "*/5 * * * *";
 
 const tasks = new Map<string, ScheduledTask>();
 const handlers = new Map<string, (job: CronJob) => Promise<void>>();
@@ -32,6 +34,48 @@ async function loadState(): Promise<CronJob[]> {
   } catch {
     return [];
   }
+}
+
+function ensureUpdateCheckCron(jobs: CronJob[]): { jobs: CronJob[]; changed: boolean } {
+  const next = [...jobs];
+  const matches = next.filter((job) => job.jobType === "update_check");
+  let changed = false;
+
+  if (matches.length === 0) {
+    next.push({
+      name: UPDATE_CHECK_NAME,
+      schedule: UPDATE_CHECK_SCHEDULE,
+      jobType: "update_check",
+      payload: "",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    });
+    return { jobs: next, changed: true };
+  }
+
+  const primary = matches[0];
+  for (const extra of matches.slice(1)) {
+    const index = next.findIndex((job) => job.name === extra.name);
+    if (index >= 0) {
+      next.splice(index, 1);
+      changed = true;
+    }
+  }
+
+  if (primary.name !== UPDATE_CHECK_NAME) {
+    primary.name = UPDATE_CHECK_NAME;
+    changed = true;
+  }
+  if (primary.schedule !== UPDATE_CHECK_SCHEDULE) {
+    primary.schedule = UPDATE_CHECK_SCHEDULE;
+    changed = true;
+  }
+  if (!primary.enabled) {
+    primary.enabled = true;
+    changed = true;
+  }
+
+  return { jobs: next, changed };
 }
 
 async function saveState(jobs: CronJob[]): Promise<void> {
@@ -82,7 +126,7 @@ function buildTask(job: CronJob): ScheduledTask {
 }
 
 export async function initCronManager(): Promise<void> {
-  const jobs = await loadState();
+  let jobs = await loadState();
   if (!jobs.find((job) => job.name === "memory_organizer_daily")) {
     const job: CronJob = {
       name: "memory_organizer_daily",
@@ -107,16 +151,9 @@ export async function initCronManager(): Promise<void> {
     jobs.push(job);
     await saveState(jobs);
   }
-  if (!jobs.find((job) => job.name === "update_check_10m")) {
-    const job: CronJob = {
-      name: "update_check_10m",
-      schedule: "*/10 * * * *",
-      jobType: "update_check",
-      payload: "",
-      enabled: true,
-      createdAt: new Date().toISOString(),
-    };
-    jobs.push(job);
+  const updateCheck = ensureUpdateCheckCron(jobs);
+  if (updateCheck.changed) {
+    jobs = updateCheck.jobs;
     await saveState(jobs);
   }
   for (const job of jobs) {

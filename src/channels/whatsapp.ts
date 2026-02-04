@@ -13,9 +13,14 @@ import { rm } from "node:fs/promises";
 import { isAuthorized } from "../config/allowlist";
 import { classifyMessage } from "../core/messagePipeline";
 import { listScripts, runScript } from "../executor/executor";
-import { createCron, listCrons, pauseCron, removeCron } from "../core/cronManager";
+import { createCron, createCronNormalized, listCrons, pauseCron, removeCron } from "../core/cronManager";
 import os from "node:os";
-import { diagnoseLogs, interpretOnboardingAnswer, interpretStrictJson } from "../core/brain";
+import {
+  diagnoseLogs,
+  explainEmailSecurity,
+  interpretOnboardingAnswer,
+  interpretStrictJson,
+} from "../core/brain";
 import { executeActions } from "../core/actionExecutor";
 import { getProject, upsertProject } from "../core/projectRegistry";
 import { findSkillByIntent } from "../skills/registry";
@@ -66,6 +71,35 @@ let lastQrResetAt = 0;
 function normalizeJid(value: string | null | undefined): string {
   if (!value) return "";
   return value.replace(/\\D/g, "");
+}
+
+function isLikelyXaiKey(value: string): boolean {
+  return /^xai-[A-Za-z0-9]{20,}$/.test(value.trim());
+}
+
+function parseRelativeReminder(text: string): { message: string; offsetMs: number } | null {
+  const normalized = text.toLowerCase();
+  if (!normalized.includes("lembre") && !normalized.includes("lembra")) {
+    return null;
+  }
+  const match = normalized.match(/(?:daqui a? |em )(\d+)\s*(minuto|minutos|min|hora|horas|h)/i);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const unit = match[2];
+  const minutes = unit.startsWith("h") ? amount * 60 : amount;
+  const offsetMs = minutes * 60_000;
+  if (offsetMs <= 0) return null;
+
+  let message = text;
+  message = message.replace(match[0], "");
+  message = message.replace(/me\s+lembre(?:\s+de)?/i, "");
+  message = message.replace(/me\s+lembra(?:\s+de)?/i, "");
+  message = message.replace(/lembre(?:\s+de)?/i, "");
+  message = message.replace(/lembra(?:\s+de)?/i, "");
+  message = message.replace(/\s+/g, " ").trim();
+  if (!message) message = "Lembrete";
+  return { message, offsetMs };
 }
 
 function sameOwner(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -346,19 +380,54 @@ export async function initWhatsApp(): Promise<WASocket> {
         message.message?.conversation ??
         message.message?.extendedTextMessage?.text ??
         "";
-      if (!text.trim()) {
-        continue;
-      }
-      let pending = await getPending(threadId);
-      const sanitizedText = sanitizeConversationText(text, pending);
-      if (!authorized) {
-        console.warn(`[Turion] msg bloqueada`, { sender, from });
-        continue;
-      }
-      if (owner?.setup_done && pending?.type === "OWNER_SETUP") {
-        await clearPending(threadId);
-        pending = null;
-      }
+        if (!text.trim()) {
+          continue;
+        }
+        let pending = await getPending(threadId);
+        const sanitizedText = sanitizeConversationText(text, pending);
+        if (!authorized) {
+          console.warn(`[Turion] msg bloqueada`, { sender, from });
+          continue;
+        }
+        const awaitingApiKey = pending?.type === "OWNER_SETUP" && pending.stage === "await_api_key";
+        if (!awaitingApiKey) {
+          const handledKey = await handleStandaloneApiKey(socket, from, threadId, text);
+          if (handledKey) {
+            continue;
+          }
+        }
+        if (!pending) {
+          const reminder = parseRelativeReminder(text);
+          if (reminder) {
+            const timezone = await getTimezone();
+            const scheduleAt = new Date(Date.now() + reminder.offsetMs);
+            try {
+              await createCronNormalized({
+                name: `reminder_${Date.now()}`,
+                schedule: scheduleAt.toISOString(),
+                jobType: "reminder",
+                payload: JSON.stringify({ to: from, message: reminder.message }),
+                runOnce: true,
+                timezone,
+              });
+              const when = await getCurrentTimeString();
+              await sendAndLog(
+                socket,
+                from,
+                threadId,
+                `Fechado. Vou te lembrar em ${Math.round(reminder.offsetMs / 60000)} minuto(s). Agora sao ${when}.`,
+              );
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Falha ao criar lembrete.";
+              await sendAndLog(socket, from, threadId, `Nao consegui criar o lembrete: ${message}`);
+            }
+            continue;
+          }
+        }
+        if (owner?.setup_done && pending?.type === "OWNER_SETUP") {
+          await clearPending(threadId);
+          pending = null;
+        }
       if (!pending) {
         const quoted = extractQuotedText(message);
         if (quoted && owner?.paired_at && !owner?.setup_done) {
@@ -1027,6 +1096,57 @@ async function handleBrain(
       return;
     }
 
+    if (parseEmailAccessQuestion(text)) {
+      const config = await loadEmailConfig();
+      if (config) {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          `Sim, ja tenho acesso ao seu email (${config.provider}). Quer que eu verifique novos emails?`,
+        );
+      } else {
+        await sendAndLog(socket, to, threadId, buildEmailConnectIntro());
+      }
+      return;
+    }
+
+    if (parseEmailConnectRequest(text)) {
+      const config = await loadEmailConfig();
+      if (config) {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          `Ja estou conectada no seu email (${config.provider}). Quer que eu verifique novos emails?`,
+        );
+      } else {
+        await sendAndLog(socket, to, threadId, buildEmailConnectIntro());
+      }
+      return;
+    }
+
+    if (parseEmailSecurityQuestion(text)) {
+      try {
+        const answer = await explainEmailSecurity(text);
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          answer ??
+            "Posso explicar com calma como funciona a conexao e as senhas de app. Quer que eu detalhe o passo a passo?",
+        );
+      } catch {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Posso explicar com calma como funciona a conexao e as senhas de app. Quer que eu detalhe o passo a passo?",
+        );
+      }
+      return;
+    }
+
     if (parseEmailStatusRequest(text)) {
       const config = await loadEmailConfig();
       if (config) {
@@ -1085,46 +1205,38 @@ async function handleBrain(
     }
 
     const provider = parseEmailProvider(text);
-    if (provider) {
-      await setPending(threadId, {
-        type: "EMAIL_CONNECT_FLOW",
-        provider,
-        stage: "await_email",
-        createdAt: new Date().toISOString(),
-      });
-      if (provider === "icloud") {
-        await sendAndLog(
-          socket,
-          to,
-          threadId,
-          [
-            "Para iCloud, voce precisa de uma App-Specific Password (forma segura da Apple).",
-            "Passo rapido:",
-            "1) appleid.apple.com > Sign-In and Security > App-Specific Passwords",
-            "2) Generate Password (nome: Turion Assistant Mail)",
-            "3) Copie a senha gerada (aparece uma vez)",
-            "",
-            "Agora me envie seu email @icloud.com.",
-          ].join("\n"),
-        );
-      } else {
-        await sendAndLog(
-          socket,
-          to,
-          threadId,
-          [
-            "Para Gmail, use uma App Password (mais seguro que senha normal).",
-            "Se preferir, posso explicar como gerar.",
-            "Agora me envie seu email completo.",
-          ].join("\n"),
-        );
+      if (provider) {
+        await setPending(threadId, {
+          type: "EMAIL_CONNECT_FLOW",
+          provider,
+          stage: "await_email",
+          createdAt: new Date().toISOString(),
+        });
+        if (provider === "icloud") {
+          await sendAndLog(socket, to, threadId, buildIcloudStepsIntro());
+        } else {
+          await sendAndLog(
+            socket,
+            to,
+            threadId,
+            [
+              "Perfeito. Para Gmail usamos App Password (mais seguro que a senha principal).",
+              "Se quiser, eu explico com calma o passo a passo.",
+              "Agora me envie seu email completo.",
+            ].join("\n"),
+          );
+        }
+        return;
       }
-      return;
-    }
 
-    if (parseUpdateCheckRequest(text)) {
-      const checkScript =
-        process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
+      if (parseModelUpdateQuestion(text)) {
+        await sendAndLog(socket, to, threadId, buildModelUpdateExplanation());
+        return;
+      }
+
+      if (parseUpdateCheckRequest(text)) {
+        const checkScript =
+          process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
       let status = "";
       try {
         status = await runScript(checkScript);
@@ -1565,6 +1677,9 @@ function sanitizeConversationText(
 ): string {
   const lowered = text.toLowerCase();
   const sensitiveHints = ["app password", "senha", "password", "email connect"];
+  if (isLikelyXaiKey(text.trim())) {
+    return "[redacted]";
+  }
   if (pending?.type === "EMAIL_CONNECT_FLOW" && pending.stage === "await_password") {
     return "[redacted]";
   }
@@ -1609,6 +1724,27 @@ function parseUpdateStatusRequest(text: string): boolean {
     normalized.includes("?") ||
     normalized.includes("existe");
   return hasUpdate && hasQuestion;
+}
+
+function parseModelUpdateQuestion(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  const hasModel =
+    normalized.includes("modelo") ||
+    normalized.includes("grok") ||
+    normalized.includes("ia") ||
+    normalized.includes("llm");
+  const hasUpdate = normalized.includes("update") || normalized.includes("atualiza");
+  return hasModel && hasUpdate;
+}
+
+function buildModelUpdateExplanation(): string {
+  const model = process.env.TURION_XAI_MODEL || "grok-4-1-fast-reasoning";
+  return [
+    "O modelo (Grok) é um serviço externo: eu não faço update dele localmente.",
+    `Modelo configurado agora: ${model}.`,
+    "Se quiser trocar, me diga o modelo exato e eu ajusto a configuracao.",
+  ].join("\n");
 }
 
 function resolveUpdateCheck(status: string): { kind: "available" | "up_to_date" | "error" | "unknown"; message?: string } {
@@ -1664,6 +1800,70 @@ function parseEmailStatusRequest(text: string): boolean {
   );
 }
 
+function parseEmailAccessQuestion(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  const hasEmail = normalized.includes("email") || normalized.includes("e-mail");
+  const hasAccess =
+    normalized.includes("acesso") ||
+    normalized.includes("tem acesso") ||
+    /\bler\b/.test(normalized) ||
+    /\blê\b/.test(normalized) ||
+    /\blesse\b/.test(normalized);
+  return hasEmail && hasAccess;
+}
+
+function parseEmailConnectRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  const hasEmail = normalized.includes("email") || normalized.includes("e-mail");
+  const hasConnect =
+    normalized.includes("conectar") ||
+    normalized.includes("configurar") ||
+    normalized.includes("ligar") ||
+    normalized.includes("vincular");
+  return hasEmail && hasConnect;
+}
+
+function parseEmailSecurityQuestion(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  const hasEmail = normalized.includes("email") || normalized.includes("e-mail");
+  const hasProvider = normalized.includes("gmail") || normalized.includes("icloud");
+  const hasSecurity =
+    normalized.includes("segur") ||
+    normalized.includes("senha") ||
+    normalized.includes("app password") ||
+    normalized.includes("app-specific") ||
+    normalized.includes("como funciona") ||
+    normalized.includes("por que") ||
+    normalized.includes("porque");
+  return hasSecurity && (hasEmail || hasProvider);
+}
+
+function buildEmailConnectIntro(): string {
+  return [
+    "Ainda nao tenho acesso ao seu email.",
+    "Se voce quiser, posso conectar de forma segura.",
+    "Opcoes: Gmail ou iCloud.",
+    "Se preferir, eu explico com calma como funciona e por que usamos App Password.",
+    "Qual voce quer usar?",
+  ].join("\n");
+}
+
+function buildIcloudStepsIntro(): string {
+  return [
+    "Perfeito. No iCloud, a Apple exige uma App-Specific Password (mais segura que a senha principal).",
+    "Se quiser, eu explico o motivo e o passo a passo com calma.",
+    "Passo rapido:",
+    "1) appleid.apple.com > Sign-In and Security > App-Specific Passwords",
+    "2) Generate Password (nome: Turion Assistant Mail)",
+    "3) Copie a senha gerada (aparece uma vez)",
+    "",
+    "Agora me envie seu email @icloud.com.",
+  ].join("\n");
+}
+
 function parseEmailProvider(text: string): "icloud" | "gmail" | null {
   const normalized = text.trim().toLowerCase();
   if (normalized === "icloud" || normalized.includes("icloud")) return "icloud";
@@ -1693,7 +1893,29 @@ async function handlePendingEmailConnect(
 ): Promise<boolean> {
   if (pending.stage === "await_email") {
     const email = extractEmail(text);
-    if (!email) return false;
+    if (!email) {
+      if (parseEmailSecurityQuestion(text)) {
+        try {
+          const answer = await explainEmailSecurity(text);
+          await sendAndLog(
+            socket,
+            to,
+            threadId,
+            answer ??
+              "Posso explicar com calma como funciona a conexao e por que usamos App Password. Quer que eu detalhe?",
+          );
+        } catch {
+          await sendAndLog(
+            socket,
+            to,
+            threadId,
+            "Posso explicar com calma como funciona a conexao e por que usamos App Password. Quer que eu detalhe?",
+          );
+        }
+        return true;
+      }
+      return false;
+    }
     await setPending(threadId, {
       type: "EMAIL_CONNECT_FLOW",
       provider: pending.provider,
@@ -1701,10 +1923,10 @@ async function handlePendingEmailConnect(
       email,
       createdAt: new Date().toISOString(),
     });
-    const hint =
-      pending.provider === "icloud"
-        ? "Agora me envie a App-Specific Password (ela e diferente da sua senha normal)."
-        : "Agora me envie a App Password do Gmail (mais seguro que senha normal).";
+      const hint =
+        pending.provider === "icloud"
+          ? "Agora me envie a App-Specific Password (ela e diferente da sua senha normal). Se quiser, explico com calma."
+          : "Agora me envie a App Password do Gmail (mais seguro que a senha normal). Se quiser, explico com calma.";
     await sendAndLog(socket, to, threadId, hint);
     return true;
   }
@@ -1712,6 +1934,26 @@ async function handlePendingEmailConnect(
   if (pending.stage === "await_password") {
     const password = text.trim();
     if (!password) return false;
+    if (parseEmailSecurityQuestion(text)) {
+      try {
+        const answer = await explainEmailSecurity(text);
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          answer ??
+            "Posso explicar com calma como funciona a conexao e por que usamos App Password. Quer que eu detalhe?",
+        );
+      } catch {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Posso explicar com calma como funciona a conexao e por que usamos App Password. Quer que eu detalhe?",
+        );
+      }
+      return true;
+    }
     const emailSkill = new EmailSkill();
     const result = await emailSkill.execute(
       {
@@ -2541,6 +2783,23 @@ async function saveEnvValue(key: string, value: string): Promise<void> {
   } catch {
     await (await import("node:fs/promises")).writeFile(envPath, `${key}=${value}\n`, "utf8");
   }
+}
+
+async function handleStandaloneApiKey(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  text: string,
+): Promise<boolean> {
+  const value = text.trim();
+  if (!isLikelyXaiKey(value)) {
+    return false;
+  }
+  await saveEnvValue("XAI_API_KEY", value);
+  process.env.XAI_API_KEY = value;
+  await addMemoryItem("decision", "XAI_API_KEY atualizada via WhatsApp");
+  await sendAndLog(socket, to, threadId, "Chave do Grok salva. Posso continuar?");
+  return true;
 }
 
 function normalizeEmailArgs(

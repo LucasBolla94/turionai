@@ -237,6 +237,19 @@ export async function draftEmailReply(input: string): Promise<string | null> {
   return content?.trim() || null;
 }
 
+export async function explainEmailSecurity(input: string): Promise<string | null> {
+  const system = [
+    "VocÃª Ã© Tur, assistente pessoal.",
+    "Explique com calma e paciÃªncia como funciona a conexÃ£o de email.",
+    "Inclua por que usamos App Password no Gmail e no iCloud.",
+    "Reforce que nÃ£o pedimos a senha principal da conta.",
+    "DÃª um passo a passo simples se a pessoa quiser conectar.",
+    "Responda em portuguÃªs, atÃ© 8 frases.",
+  ].join(" ");
+  const content = await callXai(system, input);
+  return content?.trim() || null;
+}
+
 export interface OnboardingAnswer {
   value: string;
   timezone?: string;
