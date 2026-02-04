@@ -13,6 +13,13 @@ export type PendingAction =
       createdAt: string;
     }
   | {
+      type: "EMAIL_CONNECT_FLOW";
+      provider: "icloud" | "gmail";
+      stage: "await_email" | "await_password";
+      email?: string;
+      createdAt: string;
+    }
+  | {
       type: "RUN_PLAN";
       plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }>;
       createdAt: string;

@@ -36,6 +36,7 @@ import { readLatestDigest } from "../core/conversationStore";
 import { getTimezone } from "../core/timezone";
 import { EmailSkill } from "../skills/emailSkill";
 import { clearPending, getPending, setPending } from "../core/pendingActions";
+import { loadEmailConfig } from "../core/emailStore";
 import { consumeUpdatePending, markUpdatePending } from "../core/updateStatus";
 
 const authDir = resolve("state", "baileys");
@@ -135,13 +136,19 @@ export async function initWhatsApp(): Promise<WASocket> {
       if (!text.trim()) {
         continue;
       }
-      const sanitizedText = sanitizeConversationText(text);
+      const pending = await getPending(threadId);
+      const sanitizedText = sanitizeConversationText(text, pending);
       if (!authorized) {
         console.warn(`[Turion] msg bloqueada`, { sender, from });
         continue;
       }
-      const pending = await getPending(threadId);
       const decision = parseConfirmation(text);
+      if (pending && pending.type === "EMAIL_CONNECT_FLOW") {
+        const handled = await handlePendingEmailConnect(socket, from, threadId, pending, text);
+        if (handled) {
+          continue;
+        }
+      }
       if (pending && decision) {
         await handlePendingDecision(socket, from, threadId, pending, decision);
         continue;
@@ -599,6 +606,64 @@ async function handleBrain(
       return;
     }
 
+    if (parseEmailStatusRequest(text)) {
+      const config = await loadEmailConfig();
+      if (config) {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          `Sim, estou conectada no seu email (${config.provider}). Quer que eu verifique novos emails?`,
+        );
+      } else {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Ainda nao estou conectada ao seu email. Posso conectar com Gmail ou iCloud. Qual voce prefere?",
+        );
+      }
+      return;
+    }
+
+    const provider = parseEmailProvider(text);
+    if (provider) {
+      await setPending(threadId, {
+        type: "EMAIL_CONNECT_FLOW",
+        provider,
+        stage: "await_email",
+        createdAt: new Date().toISOString(),
+      });
+      if (provider === "icloud") {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          [
+            "Para iCloud, voce precisa de uma App-Specific Password (forma segura da Apple).",
+            "Passo rapido:",
+            "1) appleid.apple.com > Sign-In and Security > App-Specific Passwords",
+            "2) Generate Password (nome: Turion Assistant Mail)",
+            "3) Copie a senha gerada (aparece uma vez)",
+            "",
+            "Agora me envie seu email @icloud.com.",
+          ].join("\n"),
+        );
+      } else {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          [
+            "Para Gmail, use uma App Password (mais seguro que senha normal).",
+            "Se preferir, posso explicar como gerar.",
+            "Agora me envie seu email completo.",
+          ].join("\n"),
+        );
+      }
+      return;
+    }
+
     if (parseUpdateRequest(text)) {
       const checkScript =
         process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
@@ -640,6 +705,50 @@ async function handleBrain(
         threadId,
         "Nao consegui validar o status agora, mas posso atualizar mesmo assim. Quer que eu siga? (confirmar/cancelar)",
       );
+      return;
+    }
+
+    if (parseUpdateStatusRequest(text)) {
+      const checkScript =
+        process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
+      let status = "";
+      try {
+        status = await runScript(checkScript);
+      } catch {
+        status = "";
+      }
+      if (status.includes("UPDATE_AVAILABLE")) {
+        await setPending(threadId, {
+          type: "RUN_UPDATE",
+          createdAt: new Date().toISOString(),
+        });
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Encontrei um update novo. Quer que eu atualize agora? (confirmar/cancelar)",
+        );
+        return;
+      }
+      if (status.includes("UP_TO_DATE")) {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Nao achei update novo agora. Se quiser, posso checar de novo.",
+        );
+        return;
+      }
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Nao consegui checar o status agora. Quer que eu tente atualizar mesmo assim?",
+      );
+      await setPending(threadId, {
+        type: "RUN_UPDATE",
+        createdAt: new Date().toISOString(),
+      });
       return;
     }
 
@@ -915,9 +1024,15 @@ function safeJson<T = Record<string, unknown>>(payload: string): T | null {
   }
 }
 
-function sanitizeConversationText(text: string): string {
+function sanitizeConversationText(
+  text: string,
+  pending: { type: string; stage?: string } | null,
+): string {
   const lowered = text.toLowerCase();
   const sensitiveHints = ["app password", "senha", "password", "email connect"];
+  if (pending?.type === "EMAIL_CONNECT_FLOW" && pending.stage === "await_password") {
+    return "[redacted]";
+  }
   if (sensitiveHints.some((hint) => lowered.includes(hint))) {
     return "[redacted]";
   }
@@ -927,7 +1042,11 @@ function sanitizeConversationText(text: string): string {
 function parseUpdateRequest(text: string): boolean {
   const normalized = text.trim().toLowerCase();
   if (!normalized) return false;
-  const hasUpdate = normalized.includes("atualiz") || normalized.includes("update");
+  const hasUpdate =
+    normalized.includes("atualiz") ||
+    normalized.includes("update") ||
+    normalized.includes("faz o update") ||
+    normalized.includes("fazer update");
   const hasTarget =
     normalized.includes("turion") ||
     normalized.includes("sistema") ||
@@ -935,6 +1054,18 @@ function parseUpdateRequest(text: string): boolean {
     normalized.includes("agente") ||
     normalized.includes("modelo");
   return hasUpdate && (hasTarget || normalized.length < 20);
+}
+
+function parseUpdateStatusRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  const hasUpdate = normalized.includes("update") || normalized.includes("atualiza");
+  const hasQuestion =
+    normalized.includes("tem") ||
+    normalized.includes("novo") ||
+    normalized.includes("?") ||
+    normalized.includes("existe");
+  return hasUpdate && hasQuestion;
 }
 
 function parseGitStatusRequest(text: string): boolean {
@@ -948,6 +1079,73 @@ function parseGitStatusRequest(text: string): boolean {
     normalized.includes("conexão") ||
     normalized.includes("conectar");
   return hasGit && hasConnect;
+}
+
+function parseEmailStatusRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    (normalized.includes("email") || normalized.includes("e-mail")) &&
+    (normalized.includes("conect") || normalized.includes("ligado") || normalized.includes("pronto"))
+  );
+}
+
+function parseEmailProvider(text: string): "icloud" | "gmail" | null {
+  const normalized = text.trim().toLowerCase();
+  if (normalized === "icloud" || normalized.includes("icloud")) return "icloud";
+  if (normalized === "gmail" || normalized.includes("gmail")) return "gmail";
+  return null;
+}
+
+function extractEmail(text: string): string | null {
+  const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? match[0] : null;
+}
+
+async function handlePendingEmailConnect(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  pending: { type: "EMAIL_CONNECT_FLOW"; provider: "icloud" | "gmail"; stage: "await_email" | "await_password"; email?: string },
+  text: string,
+): Promise<boolean> {
+  if (pending.stage === "await_email") {
+    const email = extractEmail(text);
+    if (!email) return false;
+    await setPending(threadId, {
+      type: "EMAIL_CONNECT_FLOW",
+      provider: pending.provider,
+      stage: "await_password",
+      email,
+      createdAt: new Date().toISOString(),
+    });
+    const hint =
+      pending.provider === "icloud"
+        ? "Agora me envie a App-Specific Password (ela e diferente da sua senha normal)."
+        : "Agora me envie a App Password do Gmail (mais seguro que senha normal).";
+    await sendAndLog(socket, to, threadId, hint);
+    return true;
+  }
+
+  if (pending.stage === "await_password") {
+    const password = text.trim();
+    if (!password) return false;
+    const emailSkill = new EmailSkill();
+    const result = await emailSkill.execute(
+      {
+        action: "connect",
+        provider: pending.provider,
+        user: pending.email,
+        password,
+      },
+      { platform: process.platform },
+    );
+    await clearPending(threadId);
+    await sendAndLog(socket, to, threadId, result.output);
+    return true;
+  }
+
+  return false;
 }
 
 async function executeUpdate(
@@ -1010,7 +1208,7 @@ async function handlePendingDecision(
   socket: WASocket,
   to: string,
   threadId: string,
-  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
+  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "EMAIL_CONNECT_FLOW"; provider: "gmail" | "icloud"; stage: "await_email" | "await_password"; email?: string } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
   decision: "confirm" | "cancel",
 ): Promise<void> {
   if (decision === "cancel") {
@@ -1038,6 +1236,11 @@ async function handlePendingDecision(
     } else {
       await sendAndLog(socket, to, threadId, "Plano executado.");
     }
+    return;
+  }
+  if (pending.type !== "RUN_SKILL") {
+    await clearPending(threadId);
+    await sendAndLog(socket, to, threadId, "A??o pendente inv?lida.");
     return;
   }
   const skill = findSkillByIntent(pending.intent);
