@@ -1,5 +1,6 @@
 #!/usr/bin/env sh
 set -e
+set -x
 
 REPO_DIR="${TURION_REPO_DIR:-/app}"
 EXPECTED_URL_1="git@github.com:LucasBolla94/turionai.git"
@@ -18,6 +19,7 @@ fi
 cd "$REPO_DIR"
 
 REMOTE_URL="$(git config --get remote.origin.url || true)"
+echo "Remote: $REMOTE_URL"
 if [ "$REMOTE_URL" != "$EXPECTED_URL_1" ] && [ "$REMOTE_URL" != "$EXPECTED_URL_2" ] && [ "$REMOTE_URL" != "$EXPECTED_URL_3" ]; then
   echo "Remote inesperado: $REMOTE_URL"
   exit 1

@@ -53,13 +53,18 @@ export async function runScript(scriptName: string, args: string[] = []): Promis
   }
 
   const runner = getRunnerForExtension(ext);
-  const { stdout, stderr } = await execFileAsync(
-    runner[0],
-    [...runner.slice(1), scriptPath, ...args],
-    {
-    timeout: 30_000,
-    },
-  );
-
-  return [stdout, stderr].filter(Boolean).join("\n");
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      runner[0],
+      [...runner.slice(1), scriptPath, ...args],
+      {
+        timeout: 30_000,
+      },
+    );
+    return [stdout, stderr].filter(Boolean).join("\n");
+  } catch (error) {
+    const err = error as { stdout?: string; stderr?: string; message?: string };
+    const details = [err.message, err.stdout, err.stderr].filter(Boolean).join("\n");
+    throw new Error(details || "Falha ao executar script.");
+  }
 }
