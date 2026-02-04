@@ -16,7 +16,15 @@ ensure_cmd() {
 
 install_packages_debian() {
   sudo apt-get update
-  sudo apt-get install -y git curl ca-certificates
+  sudo apt-get install -y git curl ca-certificates gnupg
+}
+
+install_docker_repo_debian() {
+  sudo install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  sudo chmod a+r /etc/apt/keyrings/docker.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+  sudo apt-get update
 }
 
 install_docker() {
@@ -34,9 +42,15 @@ install_compose_plugin() {
   fi
 
   if command -v apt-get >/dev/null 2>&1; then
+    # Ensure Docker repo is configured (compose plugin may not exist in default repos)
+    install_docker_repo_debian || true
     echo "[Tur] Instalando docker compose plugin via apt..."
     sudo apt-get update
     sudo apt-get install -y docker-compose-plugin || true
+    if docker compose version >/dev/null 2>&1; then
+      return 0
+    fi
+    sudo apt-get install -y docker-compose-v2 || true
     if docker compose version >/dev/null 2>&1; then
       return 0
     fi
@@ -74,7 +88,8 @@ install_compose_plugin() {
 
 run_compose() {
   if command -v docker-compose >/dev/null 2>&1; then
-    docker-compose "$@"
+    COMPOSE_BIN="$(command -v docker-compose)"
+    "$COMPOSE_BIN" "$@"
     return
   fi
   if docker compose version >/dev/null 2>&1; then
