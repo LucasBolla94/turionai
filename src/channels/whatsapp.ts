@@ -1172,7 +1172,8 @@ function parseEmailCommandArgs(action: string, rest: string[]): Record<string, u
   }
   if (action === "list") {
     const limit = rest[0] ? Number(rest[0]) : 5;
-    return { action: "list", limit, unreadOnly: true };
+    const mode = rest.includes("compact") || rest.includes("ver") ? "compact" : "summary";
+    return { action: "list", limit, unreadOnly: true, mode };
   }
   if (action === "read") {
     return { action: "read", id: Number(rest[0]) };

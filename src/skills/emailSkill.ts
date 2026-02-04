@@ -41,61 +41,76 @@ export class EmailSkill implements Skill {
       const limit = typeof args.limit === "number" ? args.limit : 5;
       const unreadOnly =
         typeof args.unreadOnly === "boolean" ? args.unreadOnly : true;
+      const mode = typeof args.mode === "string" ? args.mode : "summary";
       const result = await listEmails(config, { limit, unreadOnly });
       if (result.items.length === 0) {
         return { ok: true, output: "Nenhum email encontrado." };
       }
       const total = result.totalUnread;
       const timeZone = await getTimezone();
-      const header = unreadOnly
-        ? "📬 Seus e-mails não lidos (5 mais recentes)"
-        : "📬 Seus e-mails (mais recentes)";
-      const separator = "────────────────────────";
-      const output = result.items
-        .map((mail, index) => formatEmailLine(mail, index + 1, timeZone))
-        .join("\n\n");
+      const important = result.items.filter(
+        (mail) => computeEmailPriority(mail).importance === "alta",
+      );
 
-      const important = result.items
-        .map((mail, index) => ({ mail, index: index + 1 }))
-        .filter(({ mail }) => computeEmailPriority(mail).importance === "alta");
+      if (mode === "compact") {
+        const items = result.items.slice(0, 4);
+        const lines = items.map((mail, index) =>
+          formatEmailCompact(mail, index + 1, timeZone),
+        );
+        const more =
+          unreadOnly && total > items.length
+            ? `Você ainda tem ${total - items.length} e-mails não lidos.`
+            : "";
+        return {
+          ok: true,
+          output: [
+            "📬 Últimos e-mails não lidos:",
+            "",
+            ...lines,
+            "",
+            more,
+            "Quer que eu abra algum?",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        };
+      }
 
-      const insight = important.length
+      const importantBullets = important
+        .slice(0, 2)
+        .map((mail) => `• ${simplifySender(mail.from)} — ${shortSubject(mail.subject)}`);
+
+      const insight = importantBullets.length
         ? [
-            "🧠 O que eu percebi:",
-            `👉 O e-mail #${important[0].mail.id} parece importante.`,
-            `Ele fala sobre: ${classifyEmailCategory(important[0].mail)}.`,
+            "📬 Dei uma olhada nos seus e-mails agora.",
+            "",
+            `Tem ${importantBullets.length} que merecem atenção 👀`,
+            "",
+            ...importantBullets,
+            "",
+            "O resto são notificações e newsletters/promos.",
           ].join("\n")
-        : "🧠 O que eu percebi:\n👉 Nenhum email parece urgente agora.";
+        : [
+            "📬 Dei uma olhada nos seus e-mails agora.",
+            "Nada urgente por aqui. O resto são notificações e newsletters/promos.",
+          ].join("\n");
 
       const more =
-        unreadOnly && total > result.items.length
-          ? `\n📨 Você ainda tem **+${total - result.items.length}** e-mails não lidos.`
+        unreadOnly && total > 0
+          ? `\nVocê ainda tem ${total} e-mails não lidos.`
           : "";
 
       const footer = [
-        "O que você prefere agora?",
-        "1️⃣ Ler o e-mail importante",
-        "2️⃣ Ver mais e-mails",
-        "3️⃣ Filtrar só importantes",
-        "4️⃣ Ignorar newsletters/promos",
+        "Quer que eu:",
+        "1️⃣ Abra um desses importantes e te explique",
+        "2️⃣ Veja se tem algo urgente",
+        "3️⃣ Ignore só as promoções",
+        "4️⃣ Mostre mais e-mails",
       ].join("\n");
 
       return {
         ok: true,
-        output: [
-          header,
-          "",
-          separator,
-          output,
-          separator,
-          "",
-          insight,
-          more,
-          "",
-          footer,
-        ]
-          .filter(Boolean)
-          .join("\n"),
+        output: [insight, more, "", footer].filter(Boolean).join("\n"),
       };
     }
 
@@ -190,25 +205,22 @@ function computeEmailPriority(mail: EmailSummary): { urgency: string; importance
   };
 }
 
-function formatEmailLine(mail: EmailSummary, index: number, timeZone: string): string {
+function formatEmailCompact(mail: EmailSummary, index: number, timeZone: string): string {
   const priority = computeEmailPriority(mail);
-  const badge =
-    priority.importance === "alta" || priority.urgency === "alta"
-      ? " ⚠️ IMPORTANTE"
-      : "";
+  const badge = priority.importance === "alta" ? " ⚠️" : "";
   const time = formatTime(mail.date, timeZone);
-  return [
-    `${index}️⃣ #${mail.id}${badge}`,
-    `📌 Assunto: ${mail.subject}`,
-    `👤 De: ${simplifySender(mail.from)}`,
-    `🕒 Recebido: ${time}`,
-  ].join("\n");
+  return `${index}️⃣ ${simplifySender(mail.from)} — ${shortSubject(mail.subject)} (${time})${badge}`;
 }
 
 function simplifySender(value: string): string {
   const match = value.match(/^(.*?)(<.*>)?$/);
   if (!match) return value;
   return match[1].trim().replace(/\"/g, "") || value;
+}
+
+function shortSubject(value: string): string {
+  if (value.length <= 48) return value;
+  return `${value.slice(0, 45)}...`;
 }
 
 function formatTime(value: string, timeZone: string): string {
