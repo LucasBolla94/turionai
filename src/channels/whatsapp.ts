@@ -51,6 +51,8 @@ const seenMessages = new Map<string, number>();
 const SEEN_TTL_MS = 5 * 60 * 1000;
 let lastQr: string | null = null;
 let lastQrAt = 0;
+let isInitializing = false;
+let activeSocket: WASocket | null = null;
 
 function markSeen(id: string): void {
   const now = Date.now();
@@ -77,6 +79,10 @@ async function resetAuthState(): Promise<void> {
 }
 
 export async function initWhatsApp(): Promise<WASocket> {
+  if (isInitializing && activeSocket) {
+    return activeSocket;
+  }
+  isInitializing = true;
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const { version } = await fetchLatestBaileysVersion();
 
@@ -86,6 +92,8 @@ export async function initWhatsApp(): Promise<WASocket> {
     logger: pino({ level: "warn" }),
     getMessage: async () => undefined,
   });
+  activeSocket = socket;
+  isInitializing = false;
 
   socket.ev.on("creds.update", saveCreds);
 
@@ -98,9 +106,11 @@ export async function initWhatsApp(): Promise<WASocket> {
         const code = await ensurePairingCode();
         console.log(`[Tur] Codigo de pareamento: ${code}`);
       }
-      if (qr !== lastQr) {
+      const now = Date.now();
+      const recentlyShown = lastQr && now - lastQrAt < 15 * 1000;
+      if (!recentlyShown && qr !== lastQr) {
         lastQr = qr;
-        lastQrAt = Date.now();
+        lastQrAt = now;
         console.log("[Tur] Novo QR Code gerado. Use imediatamente.");
         const qrText = await qrcode.toString(qr, { type: "terminal" });
         console.log(qrText);
@@ -128,7 +138,9 @@ export async function initWhatsApp(): Promise<WASocket> {
         statusCode === DisconnectReason.loggedOut ||
         statusCode === DisconnectReason.restartRequired ||
         statusCode === DisconnectReason.badSession ||
-        statusCode === DisconnectReason.connectionReplaced;
+        statusCode === DisconnectReason.connectionReplaced ||
+        statusCode === 515 ||
+        statusCode === 401;
 
       console.warn("[Turion] WhatsApp desconectado.", {
         statusCode,
@@ -140,10 +152,11 @@ export async function initWhatsApp(): Promise<WASocket> {
 
       if (shouldResetAuth) {
         console.warn("[Turion] Sessao encerrada. Gerando novo QR Code...");
+        activeSocket = null;
         await resetAuthState();
         setTimeout(() => {
           void initWhatsApp();
-        }, 3000);
+        }, 8000);
         return;
       }
       if (shouldReconnect) {
