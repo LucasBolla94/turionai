@@ -3,7 +3,7 @@ services:
   turion:
     image: node:20-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run dev"
+    command: ["sh", "-c", "npm install && npm run dev"]
     volumes:
       - ./:/app
       - ./state:/app/state

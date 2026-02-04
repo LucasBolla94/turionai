@@ -8,7 +8,7 @@ Assistente pessoal DevOps via WhatsApp/SSH.
 - Logar inicio
 - Ficar rodando
 
-## Como rodar
+## Como rodar (Windows/macOS/Linux)
 
 ```bash
 npm install
@@ -20,3 +20,7 @@ Ou com Docker:
 ```bash
 docker compose up -d
 ```
+
+Notas Windows:
+- Use PowerShell ou CMD com Node.js instalado.
+- Docker requer Docker Desktop.
