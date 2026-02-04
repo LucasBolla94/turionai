@@ -32,6 +32,7 @@ install_compose_plugin() {
   if docker compose version >/dev/null 2>&1; then
     return 0
   fi
+
   if command -v apt-get >/dev/null 2>&1; then
     echo "[Tur] Instalando docker compose plugin via apt..."
     sudo apt-get update
@@ -46,17 +47,18 @@ install_compose_plugin() {
     fi
   fi
 
-  echo "[Tur] Instalando docker compose via download direto..."
-  COMPOSE_VERSION="2.27.0"
+  echo "[Tur] Instalando docker compose no usuário (sem sudo)..."
+  COMPOSE_VERSION="2.30.3"
   OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
   ARCH="$(uname -m)"
   case "$ARCH" in
     x86_64|amd64) ARCH="x86_64" ;;
     aarch64|arm64) ARCH="aarch64" ;;
   esac
-  sudo mkdir -p /usr/local/lib/docker/cli-plugins
-  sudo curl -fsSL "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-${OS}-${ARCH}" -o /usr/local/lib/docker/cli-plugins/docker-compose
-  sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+  DOCKER_CONFIG="${DOCKER_CONFIG:-$HOME/.docker}"
+  mkdir -p "$DOCKER_CONFIG/cli-plugins"
+  curl -fsSL "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-${OS}-${ARCH}" -o "$DOCKER_CONFIG/cli-plugins/docker-compose"
+  chmod +x "$DOCKER_CONFIG/cli-plugins/docker-compose"
 
   if docker compose version >/dev/null 2>&1; then
     return 0
