@@ -5,6 +5,9 @@ REPO_URL="https://github.com/LucasBolla94/turionai.git"
 INSTALL_DIR="${TURION_INSTALL_DIR:-/opt/turion}"
 APP_DIR="$INSTALL_DIR/turionai"
 
+# Ensure we are not running inside a deleted directory.
+cd / >/dev/null 2>&1 || true
+
 step() {
   STEP_NUM=$((STEP_NUM + 1))
   echo ""
