@@ -366,6 +366,20 @@ async function handleCommand(
     return;
   }
 
+  if (cmd === "update") {
+    const updateScript =
+      process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
+    try {
+      const output = await runScript(updateScript);
+      await socket.sendMessage(to, { text: `${output}\nReiniciando...` });
+      setTimeout(() => process.exit(0), 1000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha na atualização.";
+      await socket.sendMessage(to, { text: `Erro: ${message}` });
+    }
+    return;
+  }
+
   await socket.sendMessage(to, { text: "Comando não reconhecido." });
 }
 

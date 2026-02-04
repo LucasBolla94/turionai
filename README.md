@@ -151,6 +151,16 @@ Plan Runner:
 - executa passos em sequência
 - registra em `state/audit/YYYY-MM-DD.jsonl`
 
+## Atualização do Turion (self-update)
+
+Comando:
+- `update`
+
+Regras de segurança:
+- somente se o remote for `git@github.com:LucasBolla94/turionai.git`
+- aborta se houver alterações locais
+- reinicia o processo após atualizar
+
 Ações permitidas (executadas com segurança):
 - `create_dir` (somente dentro do workspace)
 - `write_file` (somente dentro do workspace)

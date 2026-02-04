@@ -21,6 +21,7 @@ const COMMAND_KEYWORDS = new Set([
   "logs",
   "diagnose",
   "run",
+  "update",
   "list",
   "help",
 ]);

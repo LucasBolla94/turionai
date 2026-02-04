@@ -500,7 +500,7 @@ Resultado esperado
 ✅ Execução composta e previsível
 ✅ Estilo OpenClaw
 
-FASE 12 — Auditoria e histórico + “Conversation Digest” (Token Saver real)
+### FASE 12 — Auditoria e histórico + “Conversation Digest” (Token Saver real)
 Objetivo
 Registrar tudo (como antes), mas agora com:
 

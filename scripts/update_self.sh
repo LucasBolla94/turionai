@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+set -e
+
+REPO_DIR="${TURION_REPO_DIR:-/app}"
+EXPECTED_URL_1="git@github.com:LucasBolla94/turionai.git"
+EXPECTED_URL_2="https://github.com/LucasBolla94/turionai"
+EXPECTED_URL_3="https://github.com/LucasBolla94/turionai.git"
+
+cd "$REPO_DIR"
+
+REMOTE_URL="$(git config --get remote.origin.url || true)"
+if [ "$REMOTE_URL" != "$EXPECTED_URL_1" ] && [ "$REMOTE_URL" != "$EXPECTED_URL_2" ] && [ "$REMOTE_URL" != "$EXPECTED_URL_3" ]; then
+  echo "Remote inesperado: $REMOTE_URL"
+  exit 1
+fi
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Repositorio com alterações locais. Abortando update."
+  exit 1
+fi
+
+git fetch origin main
+git merge --ff-only origin/main
+
+echo "Atualizacao aplicada."
