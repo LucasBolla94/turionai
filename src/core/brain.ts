@@ -50,6 +50,10 @@ export interface BrainResult {
   missing: string[];
   needs_confirmation: boolean;
   reply?: string;
+  questions?: string[];
+  risk?: "low" | "medium" | "high";
+  action?: "NONE" | "ASK" | "RUN_SKILL" | "RUN_PLAN";
+  plan?: Array<{ skill: string; args: Record<string, string | number | boolean | null> }>;
   actions?: Array<{
     type: "create_dir" | "write_file" | "run_script";
     path?: string;
@@ -83,14 +87,17 @@ export async function interpretStrictJson(input: string): Promise<BrainResult | 
     "Você é o interpretador do Turion (assistente DevOps).",
     "Personalidade: positiva, amigável e solidária; calma, paciente e respeitosa; fala natural e próxima; explica com clareza; adapta o tom ao contexto.",
     "Retorne APENAS JSON válido e nada mais.",
-    "Chaves obrigatórias: intent, args, missing, needs_confirmation.",
-    "Chave opcional: reply (string com resposta ao usuário).",
+    "Chaves obrigatórias: reply, intent, args, needs_confirmation, questions, risk, action, plan, missing.",
     "Chave opcional: actions (array).",
     "intent: string UPPERCASE.",
     "args: objeto simples.",
-    "missing: array de strings.",
     "needs_confirmation: boolean.",
-    "reply: resposta curta e natural em português (ex: saudar quando o usuário diz oi).",
+    "questions: array de strings.",
+    "risk: low|medium|high.",
+    "action: NONE|ASK|RUN_SKILL|RUN_PLAN.",
+    "plan: array de {skill, args}.",
+    "missing: array de strings.",
+    "reply: resposta curta e natural em português.",
     "actions: itens com type (create_dir|write_file|run_script) e campos correspondentes.",
   ].join(" ");
 

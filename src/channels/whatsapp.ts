@@ -17,6 +17,8 @@ import os from "node:os";
 import { diagnoseLogs, interpretStrictJson } from "../core/brain";
 import { executeActions } from "../core/actionExecutor";
 import { getProject, upsertProject } from "../core/projectRegistry";
+import { findSkillByIntent } from "../skills/registry";
+import { runPlan } from "../core/planRunner";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -399,6 +401,28 @@ async function handleBrain(socket: WASocket, to: string, text: string): Promise<
         `Needs confirmation: ${result.needs_confirmation}`,
       ];
       await socket.sendMessage(to, { text: responseLines.join("\n") });
+    }
+
+    if (result.action === "RUN_PLAN" && Array.isArray(result.plan)) {
+      if (result.needs_confirmation) {
+        return;
+      }
+      const outputs = await runPlan(result.plan, { platform: process.platform });
+      if (outputs.length > 0) {
+        await socket.sendMessage(to, { text: outputs.join("\n") });
+      }
+      return;
+    }
+
+    if (result.action === "RUN_SKILL") {
+      const skill = findSkillByIntent(result.intent);
+      if (!skill) {
+        await socket.sendMessage(to, { text: "Skill não encontrada." });
+        return;
+      }
+      const outcome = await skill.execute(result.args ?? {}, { platform: process.platform });
+      await socket.sendMessage(to, { text: outcome.output });
+      return;
     }
 
     if (result.actions && result.actions.length > 0) {

@@ -138,6 +138,19 @@ Limites:
 - logs truncados em ~20KB
 - dedupe de linhas repetidas
 
+## Fase 11 (Skills + Plan Runner)
+
+Skills registradas:
+- `StatusSkill`
+- `ScriptSkill`
+- `DeploySkill`
+- `LogsSkill`
+- `CronSkill`
+
+Plan Runner:
+- executa passos em sequência
+- registra em `state/audit/YYYY-MM-DD.jsonl`
+
 Ações permitidas (executadas com segurança):
 - `create_dir` (somente dentro do workspace)
 - `write_file` (somente dentro do workspace)
