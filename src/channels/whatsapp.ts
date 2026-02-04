@@ -62,6 +62,9 @@ export async function initWhatsApp(): Promise<WASocket> {
 
   socket.ev.on("messages.upsert", (event) => {
     for (const message of event.messages) {
+      if (message.key.fromMe) {
+        continue;
+      }
       const from = message.key.remoteJid ?? "unknown";
       const sender = message.key.participant ?? message.key.remoteJid ?? "unknown";
       const authorized = isAuthorized(sender) || isAuthorized(from);
