@@ -84,19 +84,26 @@ Comandos disponíveis no WhatsApp:
 - `list scripts`
 - `run <script>`
 
-## Cron Jobs (extra)
+## Fase 7 (Cron Jobs + Token Saver base)
 
 Comandos:
-- `cron add <schedule> <comando>`
+- `cron add <name> <schedule> <jobType> [payload]`
 - `cron list`
-- `cron pause <id>`
-- `cron remove <id>`
+- `cron pause <name>`
+- `cron remove <name>`
 
 Exemplo:
 
 ```bash
-cron add */1 * * * * backup_test
+cron add backup_minutely "*/1 * * * *" log "backup_test"
 ```
+
+Estrutura criada em `state/`:
+- `state/crons/crons.json`
+- `state/conversations/`
+- `state/digests/`
+- `state/memory/`
+- `state/cache/`
 
 ## Fase 7 (IA como interpretador)
 

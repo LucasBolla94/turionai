@@ -12,12 +12,7 @@ import { resolve } from "node:path";
 import { isAuthorized } from "../config/allowlist";
 import { classifyMessage } from "../core/messagePipeline";
 import { listScripts, runScript } from "../executor/executor";
-import {
-  addCronJob,
-  listCronJobs,
-  pauseCronJob,
-  removeCronJob,
-} from "../core/cronManager";
+import { createCron, listCrons, pauseCron, removeCron } from "../core/cronManager";
 import os from "node:os";
 import { chatWithXai } from "../core/brain";
 
@@ -188,18 +183,20 @@ async function handleCommand(
   }
 
   if (cmd === "cron" && args[0] === "add") {
-    const schedule = args[1];
-    const cronCommand = args.slice(2).join(" ");
-    if (!schedule || !cronCommand) {
+    const name = args[1];
+    const schedule = args[2];
+    const jobType = args[3];
+    const payload = args.slice(4).join(" ");
+    if (!name || !schedule || !jobType) {
       await socket.sendMessage(to, {
-        text: "Uso: cron add <schedule> <comando>",
+        text: "Uso: cron add <name> <schedule> <jobType> [payload]",
       });
       return;
     }
     try {
-      const job = await addCronJob(schedule, cronCommand);
+      const job = await createCron(name, schedule, jobType, payload);
       await socket.sendMessage(to, {
-        text: `Cron criado: ${job.id} (${job.schedule})`,
+        text: `Cron criado: ${job.name} (${job.schedule})`,
       });
     } catch (error) {
       const message =
@@ -210,10 +207,13 @@ async function handleCommand(
   }
 
   if (cmd === "cron" && args[0] === "list") {
-    const jobs = await listCronJobs();
+    const jobs = await listCrons();
     const response = jobs.length
       ? `Crons:\n${jobs
-          .map((j) => `- ${j.id} | ${j.schedule} | ${j.enabled ? "ON" : "OFF"}`)
+          .map(
+            (j) =>
+              `- ${j.name} | ${j.schedule} | ${j.jobType} | ${j.enabled ? "ON" : "OFF"}`,
+          )
           .join("\n")}`
       : "Nenhum cron configurado.";
     await socket.sendMessage(to, { text: response });
@@ -221,14 +221,14 @@ async function handleCommand(
   }
 
   if (cmd === "cron" && args[0] === "pause") {
-    const id = args[1];
-    if (!id) {
-      await socket.sendMessage(to, { text: "Uso: cron pause <id>" });
+    const name = args[1];
+    if (!name) {
+      await socket.sendMessage(to, { text: "Uso: cron pause <name>" });
       return;
     }
     try {
-      await pauseCronJob(id);
-      await socket.sendMessage(to, { text: `Cron pausado: ${id}` });
+      await pauseCron(name);
+      await socket.sendMessage(to, { text: `Cron pausado: ${name}` });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao pausar cron.";
@@ -238,14 +238,14 @@ async function handleCommand(
   }
 
   if (cmd === "cron" && args[0] === "remove") {
-    const id = args[1];
-    if (!id) {
-      await socket.sendMessage(to, { text: "Uso: cron remove <id>" });
+    const name = args[1];
+    if (!name) {
+      await socket.sendMessage(to, { text: "Uso: cron remove <name>" });
       return;
     }
     try {
-      await removeCronJob(id);
-      await socket.sendMessage(to, { text: `Cron removido: ${id}` });
+      await removeCron(name);
+      await socket.sendMessage(to, { text: `Cron removido: ${name}` });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao remover cron.";
