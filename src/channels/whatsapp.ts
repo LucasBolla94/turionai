@@ -56,6 +56,19 @@ let activeSocket: WASocket | null = null;
 let qrTimer: ReturnType<typeof setTimeout> | null = null;
 let lastQrResetAt = 0;
 
+function normalizeJid(value: string | null | undefined): string {
+  if (!value) return "";
+  return value.replace(/\\D/g, "");
+}
+
+function sameOwner(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const aNum = normalizeJid(a);
+  const bNum = normalizeJid(b);
+  return aNum.length > 6 && aNum === bNum;
+}
+
 function markSeen(id: string): void {
   const now = Date.now();
   seenMessages.set(id, now);
@@ -207,8 +220,8 @@ export async function initWhatsApp(): Promise<WASocket> {
       const ownerJid = owner?.owner_jid;
       const authorized =
         !ownerJid ||
-        ownerJid === sender ||
-        ownerJid === from ||
+        sameOwner(ownerJid, sender) ||
+        sameOwner(ownerJid, from) ||
         isAuthorized(sender) ||
         isAuthorized(from);
       const text =
@@ -232,6 +245,9 @@ export async function initWhatsApp(): Promise<WASocket> {
         if (handled) {
           continue;
         }
+      }
+      if (!ownerJid && owner?.paired_at) {
+        await setOwner(sender);
       }
       if (!ownerJid) {
         const code = owner?.pairing_code ?? (await ensurePairingCode());
@@ -2024,7 +2040,12 @@ async function handleOwnerSetup(
       stage: "await_role",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(socket, to, threadId, "Perfeito. O que voce faz ou em que area trabalha?");
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "Boa. Me conta um pouco sobre voce: no que voce trabalha ou com o que voce mais lida no dia a dia?",
+    );
     return true;
   }
 
@@ -2042,7 +2063,7 @@ async function handleOwnerSetup(
       socket,
       to,
       threadId,
-      "Certo. Como prefere meu jeito de falar? (curto/medio/longo e formal/casual)",
+      "Pra eu me adaptar melhor: prefere respostas mais curtas ou detalhadas? E um tom mais formal ou casual?",
     );
     return true;
   }
@@ -2158,7 +2179,7 @@ async function handleOwnerSetup(
       socket,
       to,
       threadId,
-      "E quais sao seus objetivos principais com o Turion?",
+      "Pra eu te ajudar melhor: o que voce quer que eu resolva no dia a dia?",
     );
     return true;
   }
