@@ -5,7 +5,7 @@ export interface BrainResult {
   needs_confirmation: boolean;
 }
 
-const DEFAULT_MODEL = "grok-4";
+const DEFAULT_MODEL = "grok-4-1-fast-reasoning";
 const XAI_ENDPOINT = "https://api.x.ai/v1/chat/completions";
 
 function extractJson(text: string): BrainResult | null {
