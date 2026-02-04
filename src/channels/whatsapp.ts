@@ -14,7 +14,7 @@ import { classifyMessage } from "../core/messagePipeline";
 import { listScripts, runScript } from "../executor/executor";
 import { createCron, listCrons, pauseCron, removeCron } from "../core/cronManager";
 import os from "node:os";
-import { chatWithXai } from "../core/brain";
+import { interpretStrictJson } from "../core/brain";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -259,11 +259,17 @@ async function handleCommand(
 
 async function handleBrain(socket: WASocket, to: string, text: string): Promise<void> {
   try {
-    const response = await chatWithXai(text);
-    if (!response) {
-      await socket.sendMessage(to, { text: "Sem resposta da IA." });
+    const result = await interpretStrictJson(text);
+    if (!result) {
+      await socket.sendMessage(to, { text: "IA sem resposta válida." });
       return;
     }
+    const response = [
+      `Intent: ${result.intent}`,
+      `Args: ${JSON.stringify(result.args)}`,
+      result.missing.length ? `Missing: ${result.missing.join(", ")}` : "Missing: none",
+      `Needs confirmation: ${result.needs_confirmation}`,
+    ].join("\n");
     await socket.sendMessage(to, { text: response });
   } catch (error) {
     const message =

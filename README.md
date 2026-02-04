@@ -105,7 +105,7 @@ Estrutura criada em `state/`:
 - `state/memory/`
 - `state/cache/`
 
-## Fase 7 (IA como interpretador)
+## Fase 8 (Brain com Grok - JSON estrito)
 
 Configurar a chave via variável de ambiente (não comite a chave):
 
@@ -113,4 +113,8 @@ Configurar a chave via variável de ambiente (não comite a chave):
 XAI_API_KEY="SUA_CHAVE" TURION_XAI_MODEL="grok-4" npm run dev
 ```
 
-O Turion responde com texto direto da IA (ex: saudação ou orientação).
+O Turion responde com JSON interpretado:
+- Intent
+- Args
+- Missing
+- Needs confirmation

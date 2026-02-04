@@ -44,12 +44,36 @@ async function callXai(system: string, input: string): Promise<string> {
   return data?.choices?.[0]?.message?.content ?? "";
 }
 
-export async function chatWithXai(input: string): Promise<string> {
+export interface BrainResult {
+  intent: string;
+  args: Record<string, string | number | boolean | null>;
+  missing: string[];
+  needs_confirmation: boolean;
+}
+
+function extractJson(text: string): BrainResult | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  const snippet = text.slice(start, end + 1);
+  try {
+    return JSON.parse(snippet) as BrainResult;
+  } catch {
+    return null;
+  }
+}
+
+export async function interpretStrictJson(input: string): Promise<BrainResult | null> {
   const system = [
-    "You are Turion, a DevOps assistant for servers and automation.",
-    "Respond concisely in Portuguese.",
-    "If the user greets you, greet back briefly.",
+    "Você é o interpretador do Turion (assistente DevOps).",
+    "Retorne APENAS JSON válido e nada mais.",
+    "Chaves obrigatórias: intent, args, missing, needs_confirmation.",
+    "intent: string UPPERCASE.",
+    "args: objeto simples.",
+    "missing: array de strings.",
+    "needs_confirmation: boolean.",
   ].join(" ");
 
-  return callXai(system, input);
+  const content = await callXai(system, input);
+  return extractJson(content);
 }

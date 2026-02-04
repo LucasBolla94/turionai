@@ -205,7 +205,7 @@ Ter comandos úteis, simples e seguros.
 
 ---
 
-## FASE 7 — CRON Jobs (tarefas automáticas) + Base do “Token Saver”
+## FASE 7 — CRON Jobs (tarefas automáticas) + Base do “Token Saver” ✅
 
 ### Objetivo
 Permitir tarefas agendadas **e já preparar o sistema para economizar tokens** com:
@@ -257,7 +257,7 @@ state/
 
 ---
 
-## FASE 8 — Brain com GROK (JSON estrito) + Respostas melhores (sem riscos)
+## FASE 8 — Brain com GROK (JSON estrito) + Respostas melhores (sem riscos) ✅
 
 ### Objetivo
 Integrar Grok como **Cérebro** para:
