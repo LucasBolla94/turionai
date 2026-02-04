@@ -151,6 +151,12 @@ Plan Runner:
 - executa passos em sequência
 - registra em `state/audit/YYYY-MM-DD.jsonl`
 
+## Fase 12 (Audit + Conversation Digest)
+
+- Conversas gravadas em `state/conversations/YYYY-MM-DD/thread_<id>.jsonl`
+- Digest automático a cada 10 mensagens em `state/digests/YYYY-MM-DD.json`
+- Audit de planos em `state/audit/YYYY-MM-DD.jsonl`
+
 ## Atualização do Turion (self-update)
 
 Comando:

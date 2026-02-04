@@ -19,6 +19,12 @@ import { executeActions } from "../core/actionExecutor";
 import { getProject, upsertProject } from "../core/projectRegistry";
 import { findSkillByIntent } from "../skills/registry";
 import { runPlan } from "../core/planRunner";
+import {
+  appendConversation,
+  appendDigest,
+  readRecentConversation,
+} from "../core/conversationStore";
+import { summarizeConversation } from "../core/brain";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -100,6 +106,7 @@ export async function initWhatsApp(): Promise<WASocket> {
         markSeen(messageId);
       }
       const from = message.key.remoteJid ?? "unknown";
+      const threadId = from.replace(/[^\w]/g, "_");
       const sender = message.key.participant ?? message.key.remoteJid ?? "unknown";
       const authorized = isAuthorized(sender) || isAuthorized(from);
       const text =
@@ -119,15 +126,24 @@ export async function initWhatsApp(): Promise<WASocket> {
         sender,
         timestamp: Date.now(),
       });
+      appendConversation({
+        ts: new Date().toISOString(),
+        from: sender,
+        thread: threadId,
+        direction: "in",
+        text,
+      }).catch(() => undefined);
       console.log(`[Turion] msg de ${from}: ${text}`);
       console.log(`[Turion] intent: ${result.intent}`, result);
 
       if (result.intent === "COMMAND") {
-        handleCommand(socket, from, result.command ?? "", result.args ?? []).catch((error) => {
+        handleCommand(socket, from, threadId, result.command ?? "", result.args ?? []).catch(
+          (error) => {
           console.error("[Turion] erro ao executar comando:", error);
-        });
+        },
+        );
       } else {
-        handleBrain(socket, from, text).catch((error) => {
+        handleBrain(socket, from, threadId, text).catch((error) => {
           console.error("[Turion] erro no brain:", error);
         });
       }
@@ -140,6 +156,7 @@ export async function initWhatsApp(): Promise<WASocket> {
 async function handleCommand(
   socket: WASocket,
   to: string,
+  threadId: string,
   command: string,
   args: string[],
 ): Promise<void> {
@@ -161,7 +178,7 @@ async function handleCommand(
       `- hostname: ${os.hostname()}`,
       `- rss: ${Math.round(memory.rss / 1024 / 1024)} MB`,
     ].join("\n");
-    await socket.sendMessage(to, { text: response });
+    await sendAndLog(socket, to, threadId, response);
     return;
   }
 
@@ -170,23 +187,23 @@ async function handleCommand(
     const response = scripts.length
       ? `Scripts:\n${scripts.map((s) => `- ${s}`).join("\n")}`
       : "Nenhum script encontrado.";
-    await socket.sendMessage(to, { text: response });
+    await sendAndLog(socket, to, threadId, response);
     return;
   }
 
   if (cmd === "run") {
     const scriptName = args[0];
     if (!scriptName) {
-      await socket.sendMessage(to, { text: "Uso: run <script>" });
+      await sendAndLog(socket, to, threadId, "Uso: run <script>");
       return;
     }
     try {
       const output = await runScript(scriptName);
-      await socket.sendMessage(to, { text: output || "Sem saída." });
+      await sendAndLog(socket, to, threadId, output || "Sem saída.");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao executar script.";
-      await socket.sendMessage(to, { text: `Erro: ${message}` });
+      await sendAndLog(socket, to, threadId, `Erro: ${message}`);
     }
     return;
   }
@@ -195,7 +212,7 @@ async function handleCommand(
     const name = args[0];
     const repo = args[1];
     if (!name || !repo) {
-      await socket.sendMessage(to, { text: "Uso: deploy <name> <repo_url>" });
+      await sendAndLog(socket, to, threadId, "Uso: deploy <name> <repo_url>");
       return;
     }
     try {
@@ -212,10 +229,10 @@ async function handleCommand(
         domains: [],
         last_deploy_ts: new Date().toISOString(),
       });
-      await socket.sendMessage(to, { text: output || "Deploy concluído." });
+      await sendAndLog(socket, to, threadId, output || "Deploy concluído.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha no deploy.";
-      await socket.sendMessage(to, { text: `Erro: ${message}` });
+      await sendAndLog(socket, to, threadId, `Erro: ${message}`);
     }
     return;
   }
@@ -223,12 +240,12 @@ async function handleCommand(
   if (cmd === "redeploy") {
     const name = args[0];
     if (!name) {
-      await socket.sendMessage(to, { text: "Uso: redeploy <name>" });
+      await sendAndLog(socket, to, threadId, "Uso: redeploy <name>");
       return;
     }
     const project = await getProject(name);
     if (!project) {
-      await socket.sendMessage(to, { text: "Projeto não encontrado." });
+      await sendAndLog(socket, to, threadId, "Projeto não encontrado.");
       return;
     }
     try {
@@ -237,10 +254,10 @@ async function handleCommand(
         ...project,
         last_deploy_ts: new Date().toISOString(),
       });
-      await socket.sendMessage(to, { text: output || "Redeploy concluído." });
+      await sendAndLog(socket, to, threadId, output || "Redeploy concluído.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha no redeploy.";
-      await socket.sendMessage(to, { text: `Erro: ${message}` });
+      await sendAndLog(socket, to, threadId, `Erro: ${message}`);
     }
     return;
   }
@@ -251,20 +268,21 @@ async function handleCommand(
     const jobType = args[3];
     const payload = args.slice(4).join(" ");
     if (!name || !schedule || !jobType) {
-      await socket.sendMessage(to, {
-        text: "Uso: cron add <name> <schedule> <jobType> [payload]",
-      });
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Uso: cron add <name> <schedule> <jobType> [payload]",
+      );
       return;
     }
     try {
       const job = await createCron(name, schedule, jobType, payload);
-      await socket.sendMessage(to, {
-        text: `Cron criado: ${job.name} (${job.schedule})`,
-      });
+      await sendAndLog(socket, to, threadId, `Cron criado: ${job.name} (${job.schedule})`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao criar cron.";
-      await socket.sendMessage(to, { text: `Erro: ${message}` });
+      await sendAndLog(socket, to, threadId, `Erro: ${message}`);
     }
     return;
   }
@@ -279,23 +297,23 @@ async function handleCommand(
           )
           .join("\n")}`
       : "Nenhum cron configurado.";
-    await socket.sendMessage(to, { text: response });
+    await sendAndLog(socket, to, threadId, response);
     return;
   }
 
   if (cmd === "cron" && args[0] === "pause") {
     const name = args[1];
     if (!name) {
-      await socket.sendMessage(to, { text: "Uso: cron pause <name>" });
+      await sendAndLog(socket, to, threadId, "Uso: cron pause <name>");
       return;
     }
     try {
       await pauseCron(name);
-      await socket.sendMessage(to, { text: `Cron pausado: ${name}` });
+      await sendAndLog(socket, to, threadId, `Cron pausado: ${name}`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao pausar cron.";
-      await socket.sendMessage(to, { text: `Erro: ${message}` });
+      await sendAndLog(socket, to, threadId, `Erro: ${message}`);
     }
     return;
   }
@@ -303,16 +321,16 @@ async function handleCommand(
   if (cmd === "cron" && args[0] === "remove") {
     const name = args[1];
     if (!name) {
-      await socket.sendMessage(to, { text: "Uso: cron remove <name>" });
+      await sendAndLog(socket, to, threadId, "Uso: cron remove <name>");
       return;
     }
     try {
       await removeCron(name);
-      await socket.sendMessage(to, { text: `Cron removido: ${name}` });
+      await sendAndLog(socket, to, threadId, `Cron removido: ${name}`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao remover cron.";
-      await socket.sendMessage(to, { text: `Erro: ${message}` });
+      await sendAndLog(socket, to, threadId, `Erro: ${message}`);
     }
     return;
   }
@@ -321,15 +339,15 @@ async function handleCommand(
     const name = args[0];
     const lines = args[1] ?? "200";
     if (!name) {
-      await socket.sendMessage(to, { text: "Uso: logs <name> [lines]" });
+      await sendAndLog(socket, to, threadId, "Uso: logs <name> [lines]");
       return;
     }
     try {
       const output = await runScript(logsScript, [name, lines]);
-      await socket.sendMessage(to, { text: truncateLogs(output) });
+      await sendAndLog(socket, to, threadId, truncateLogs(output));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao buscar logs.";
-      await socket.sendMessage(to, { text: `Erro: ${message}` });
+      await sendAndLog(socket, to, threadId, `Erro: ${message}`);
     }
     return;
   }
@@ -338,7 +356,7 @@ async function handleCommand(
     const name = args[0];
     const lines = args[1] ?? "200";
     if (!name) {
-      await socket.sendMessage(to, { text: "Uso: diagnose <name> [lines]" });
+      await sendAndLog(socket, to, threadId, "Uso: diagnose <name> [lines]");
       return;
     }
     try {
@@ -346,7 +364,7 @@ async function handleCommand(
       const trimmed = truncateLogs(output);
       const result = await diagnoseLogs(trimmed);
       if (!result) {
-        await socket.sendMessage(to, { text: "Diagnóstico indisponível." });
+        await sendAndLog(socket, to, threadId, "Diagnóstico indisponível.");
         return;
       }
       const response = [
@@ -357,11 +375,11 @@ async function handleCommand(
           .map((s) => `${s.skill} ${JSON.stringify(s.args)}`)
           .join("; ")}`,
       ].join("\n");
-      await socket.sendMessage(to, { text: response });
+      await sendAndLog(socket, to, threadId, response);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha no diagnóstico.";
-      await socket.sendMessage(to, { text: `Erro: ${message}` });
+      await sendAndLog(socket, to, threadId, `Erro: ${message}`);
     }
     return;
   }
@@ -371,16 +389,16 @@ async function handleCommand(
       process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
     try {
       const output = await runScript(updateScript);
-      await socket.sendMessage(to, { text: `${output}\nReiniciando...` });
+      await sendAndLog(socket, to, threadId, `${output}\nReiniciando...`);
       setTimeout(() => process.exit(0), 1000);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha na atualização.";
-      await socket.sendMessage(to, { text: `Erro: ${message}` });
+      await sendAndLog(socket, to, threadId, `Erro: ${message}`);
     }
     return;
   }
 
-  await socket.sendMessage(to, { text: "Comando não reconhecido." });
+  await sendAndLog(socket, to, threadId, "Comando não reconhecido.");
 }
 
 function truncateLogs(input: string): string {
@@ -398,15 +416,20 @@ function truncateLogs(input: string): string {
   return `${joined.slice(0, maxChars)}\n...[truncado]`;
 }
 
-async function handleBrain(socket: WASocket, to: string, text: string): Promise<void> {
+async function handleBrain(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  text: string,
+): Promise<void> {
   try {
     const result = await interpretStrictJson(text);
     if (!result) {
-      await socket.sendMessage(to, { text: "IA sem resposta válida." });
+      await sendAndLog(socket, to, threadId, "IA sem resposta válida.");
       return;
     }
     if (result.reply) {
-      await socket.sendMessage(to, { text: result.reply });
+      await sendAndLog(socket, to, threadId, result.reply);
     } else {
       const responseLines = [
         `Intent: ${result.intent}`,
@@ -414,7 +437,7 @@ async function handleBrain(socket: WASocket, to: string, text: string): Promise<
         result.missing.length ? `Missing: ${result.missing.join(", ")}` : "Missing: none",
         `Needs confirmation: ${result.needs_confirmation}`,
       ];
-      await socket.sendMessage(to, { text: responseLines.join("\n") });
+      await sendAndLog(socket, to, threadId, responseLines.join("\n"));
     }
 
     if (result.action === "RUN_PLAN" && Array.isArray(result.plan)) {
@@ -423,7 +446,7 @@ async function handleBrain(socket: WASocket, to: string, text: string): Promise<
       }
       const outputs = await runPlan(result.plan, { platform: process.platform });
       if (outputs.length > 0) {
-        await socket.sendMessage(to, { text: outputs.join("\n") });
+        await sendAndLog(socket, to, threadId, outputs.join("\n"));
       }
       return;
     }
@@ -435,17 +458,50 @@ async function handleBrain(socket: WASocket, to: string, text: string): Promise<
         return;
       }
       const outcome = await skill.execute(result.args ?? {}, { platform: process.platform });
-      await socket.sendMessage(to, { text: outcome.output });
+      await sendAndLog(socket, to, threadId, outcome.output);
       return;
     }
 
     if (result.actions && result.actions.length > 0) {
       const outputs = await executeActions(result.actions);
-      await socket.sendMessage(to, { text: outputs.join("\n") });
+      await sendAndLog(socket, to, threadId, outputs.join("\n"));
     }
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Falha no interpretador.";
-    await socket.sendMessage(to, { text: `Erro IA: ${message}` });
+    await sendAndLog(socket, to, threadId, `Erro IA: ${message}`);
   }
+}
+
+async function sendAndLog(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  text: string,
+): Promise<void> {
+  await socket.sendMessage(to, { text });
+  await appendConversation({
+    ts: new Date().toISOString(),
+    from: "Tur",
+    thread: threadId,
+    direction: "out",
+    text,
+  });
+
+  await maybeDigest(threadId);
+}
+
+const threadCounters = new Map<string, number>();
+
+async function maybeDigest(threadId: string): Promise<void> {
+  const current = threadCounters.get(threadId) ?? 0;
+  const next = current + 1;
+  threadCounters.set(threadId, next);
+  if (next % 10 !== 0) return;
+
+  const recent = await readRecentConversation(threadId, 20);
+  if (recent.length === 0) return;
+  const summary = await summarizeConversation(recent.join("\n"));
+  if (!summary) return;
+  await appendDigest(threadId, summary);
 }

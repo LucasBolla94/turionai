@@ -119,3 +119,14 @@ export async function diagnoseLogs(input: string): Promise<DiagnoseResult | null
   const content = await callXai(system, input);
   return extractJson(content) as DiagnoseResult | null;
 }
+
+export async function summarizeConversation(input: string): Promise<string | null> {
+  const system = [
+    "Você é Tur, assistente DevOps.",
+    "Resuma a conversa em até 3 frases, em português.",
+    "Se houver ações pendentes, mencione.",
+  ].join(" ");
+
+  const content = await callXai(system, input);
+  return content?.trim() || null;
+}
