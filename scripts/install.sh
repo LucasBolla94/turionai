@@ -52,11 +52,14 @@ install_compose_plugin() {
   if docker compose version >/dev/null 2>&1; then
     return 0
   fi
-  if command -v docker-compose >/dev/null 2>&1; then
-    return 0
-  fi
 
   if command -v apt-get >/dev/null 2>&1; then
+    echo "[Tur] Tentando docker-compose-v2 (pacote Ubuntu)..."
+    sudo apt-get update
+    sudo apt-get install -y docker-compose-v2 || true
+    if docker compose version >/dev/null 2>&1; then
+      return 0
+    fi
     # Ensure Docker repo is configured (compose plugin may not exist in default repos)
     install_docker_repo_debian || true
     echo "[Tur] Instalando docker compose plugin via apt..."
@@ -102,19 +105,6 @@ install_compose_plugin() {
 }
 
 run_compose() {
-  if command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE_BIN="$(command -v docker-compose)"
-    echo "[Tur] Usando: $COMPOSE_BIN"
-    if "$COMPOSE_BIN" "$@"; then
-      return
-    fi
-    if [ -S /var/run/docker.sock ] && [ ! -w /var/run/docker.sock ]; then
-      echo "[Tur] Sem permissão no Docker socket, tentando com sudo..."
-      sudo "$COMPOSE_BIN" "$@"
-      return
-    fi
-    return
-  fi
   if docker compose version >/dev/null 2>&1; then
     echo "[Tur] Usando: docker compose"
     if docker compose "$@"; then
@@ -123,6 +113,19 @@ run_compose() {
     if [ -S /var/run/docker.sock ] && [ ! -w /var/run/docker.sock ]; then
       echo "[Tur] Sem permissão no Docker socket, tentando com sudo..."
       sudo docker compose "$@"
+      return
+    fi
+    return
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_BIN="$(command -v docker-compose)"
+    echo "[Tur] Usando: $COMPOSE_BIN (legacy)"
+    if "$COMPOSE_BIN" "$@"; then
+      return
+    fi
+    if [ -S /var/run/docker.sock ] && [ ! -w /var/run/docker.sock ]; then
+      echo "[Tur] Sem permissão no Docker socket, tentando com sudo..."
+      sudo "$COMPOSE_BIN" "$@"
       return
     fi
     return
