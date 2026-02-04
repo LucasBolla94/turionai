@@ -81,7 +81,7 @@ export async function initWhatsApp(): Promise<WASocket> {
   const socket = makeWASocket({
     version,
     auth: state,
-    logger: pino({ level: "info" }),
+    logger: pino({ level: "warn" }),
     getMessage: async () => undefined,
   });
 

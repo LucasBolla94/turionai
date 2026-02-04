@@ -190,4 +190,16 @@ if ! run_compose up -d >/dev/null 2>&1; then
 fi
 
 step "Pronto. Abrindo logs para QR Code (Ctrl+C para sair)"
-run_compose logs -f
+if command -v awk >/dev/null 2>&1; then
+  run_compose logs -f | awk '
+    BEGIN { show=0 }
+    /\[Tur\] Codigo de pareamento:/ { print; next }
+    /\[Tur\] Novo QR Code gerado/ { show=1; print; next }
+    /\[Tur\] Escaneie o QR Code acima/ { print; show=0; next }
+    /\[Turion\] WhatsApp conectado/ { print; next }
+    /\[Turion\] WhatsApp desconectado/ { print; next }
+    show==1 { print }
+  '
+else
+  run_compose logs -f
+fi
