@@ -12,7 +12,14 @@ import { resolve } from "node:path";
 import { isAuthorized } from "../config/allowlist";
 import { classifyMessage } from "../core/messagePipeline";
 import { listScripts, runScript } from "../executor/executor";
+import {
+  addCronJob,
+  listCronJobs,
+  pauseCronJob,
+  removeCronJob,
+} from "../core/cronManager";
 import os from "node:os";
+import { interpretWithXai } from "../core/brain";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -120,6 +127,10 @@ export async function initWhatsApp(): Promise<WASocket> {
         handleCommand(socket, from, result.command ?? "", result.args ?? []).catch((error) => {
           console.error("[Turion] erro ao executar comando:", error);
         });
+      } else {
+        handleBrain(socket, from, text).catch((error) => {
+          console.error("[Turion] erro no brain:", error);
+        });
       }
     }
   });
@@ -176,5 +187,93 @@ async function handleCommand(
     return;
   }
 
+  if (cmd === "cron" && args[0] === "add") {
+    const schedule = args[1];
+    const cronCommand = args.slice(2).join(" ");
+    if (!schedule || !cronCommand) {
+      await socket.sendMessage(to, {
+        text: "Uso: cron add <schedule> <comando>",
+      });
+      return;
+    }
+    try {
+      const job = await addCronJob(schedule, cronCommand);
+      await socket.sendMessage(to, {
+        text: `Cron criado: ${job.id} (${job.schedule})`,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao criar cron.";
+      await socket.sendMessage(to, { text: `Erro: ${message}` });
+    }
+    return;
+  }
+
+  if (cmd === "cron" && args[0] === "list") {
+    const jobs = await listCronJobs();
+    const response = jobs.length
+      ? `Crons:\n${jobs
+          .map((j) => `- ${j.id} | ${j.schedule} | ${j.enabled ? "ON" : "OFF"}`)
+          .join("\n")}`
+      : "Nenhum cron configurado.";
+    await socket.sendMessage(to, { text: response });
+    return;
+  }
+
+  if (cmd === "cron" && args[0] === "pause") {
+    const id = args[1];
+    if (!id) {
+      await socket.sendMessage(to, { text: "Uso: cron pause <id>" });
+      return;
+    }
+    try {
+      await pauseCronJob(id);
+      await socket.sendMessage(to, { text: `Cron pausado: ${id}` });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao pausar cron.";
+      await socket.sendMessage(to, { text: `Erro: ${message}` });
+    }
+    return;
+  }
+
+  if (cmd === "cron" && args[0] === "remove") {
+    const id = args[1];
+    if (!id) {
+      await socket.sendMessage(to, { text: "Uso: cron remove <id>" });
+      return;
+    }
+    try {
+      await removeCronJob(id);
+      await socket.sendMessage(to, { text: `Cron removido: ${id}` });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao remover cron.";
+      await socket.sendMessage(to, { text: `Erro: ${message}` });
+    }
+    return;
+  }
+
   await socket.sendMessage(to, { text: "Comando não reconhecido." });
+}
+
+async function handleBrain(socket: WASocket, to: string, text: string): Promise<void> {
+  try {
+    const result = await interpretWithXai(text);
+    if (!result) {
+      await socket.sendMessage(to, { text: "IA não configurada." });
+      return;
+    }
+    const response = [
+      `Intent: ${result.intent}`,
+      `Args: ${JSON.stringify(result.args)}`,
+      result.missing.length ? `Missing: ${result.missing.join(", ")}` : "Missing: none",
+      `Needs confirmation: ${result.needs_confirmation}`,
+    ].join("\n");
+    await socket.sendMessage(to, { text: response });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Falha no interpretador.";
+    await socket.sendMessage(to, { text: `Erro IA: ${message}` });
+  }
 }

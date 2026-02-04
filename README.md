@@ -83,3 +83,31 @@ Comandos disponíveis no WhatsApp:
 - `status`
 - `list scripts`
 - `run <script>`
+
+## Cron Jobs (extra)
+
+Comandos:
+- `cron add <schedule> <comando>`
+- `cron list`
+- `cron pause <id>`
+- `cron remove <id>`
+
+Exemplo:
+
+```bash
+cron add */1 * * * * backup_test
+```
+
+## Fase 7 (IA como interpretador)
+
+Configurar a chave via variável de ambiente (não comite a chave):
+
+```bash
+XAI_API_KEY="SUA_CHAVE" TURION_XAI_MODEL="grok-4" npm run dev
+```
+
+O Turion responde com:
+- Intent
+- Args
+- Missing
+- Needs confirmation
