@@ -22,6 +22,7 @@ Mensagem ? Pipeline ? (Grok JSON) ? Validação ? Skill/Executor ? Log + Memória
 - **Checar e resumir logs**
 - **CRON** (lembretes e tarefas programadas)
 - **Atualizar o próprio código** com `--update`
+- **Checar status da API do Grok** (conectada e respondendo)
 - **Email (Gmail/iCloud)**: listar, ler, explicar, responder e apagar
 - **Memória inteligente**: lembrar fatos, decisões e projetos
 - **Onboarding humanizado** (primeira configuração)
