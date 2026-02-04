@@ -2,6 +2,50 @@
 
 Assistente pessoal DevOps via WhatsApp/SSH.
 
+## Instalação rápida (install.sh)
+
+Linux (Ubuntu/Debian):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LucasBolla94/turionai/main/scripts/install.sh | bash
+```
+
+Após instalar:
+
+```bash
+cd /opt/turion/turionai
+docker compose logs -f
+```
+
+Se sua distro usa `docker-compose` legacy:
+
+```bash
+cd /opt/turion/turionai
+docker-compose logs -f
+```
+
+## Instalação manual (clone + docker)
+
+```bash
+git clone https://github.com/LucasBolla94/turionai.git
+cd turionai
+cp .env.example .env 2>/dev/null || true
+```
+
+Edite o `.env` e coloque sua `XAI_API_KEY`.
+
+Subir com Docker Compose:
+
+```bash
+docker compose up -d
+```
+
+Ou com legacy:
+
+```bash
+docker-compose up -d
+```
+
 ## Fase 1 (estrutura base)
 
 - Subir o processo
