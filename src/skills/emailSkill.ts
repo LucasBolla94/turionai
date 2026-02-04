@@ -1,6 +1,6 @@
 import { Skill, SkillContext, SkillResult } from "./types";
 import { buildEmailConfig, loadEmailConfig, saveEmailConfig } from "../core/emailStore";
-import { listEmails, readEmail, sendEmail, deleteEmail } from "../core/emailClient";
+import { listEmails, readEmail, sendEmail, deleteEmail, type EmailSummary } from "../core/emailClient";
 import { draftEmailReply, explainEmail } from "../core/brain";
 
 export class EmailSkill implements Skill {
@@ -40,17 +40,22 @@ export class EmailSkill implements Skill {
       const limit = typeof args.limit === "number" ? args.limit : 5;
       const unreadOnly =
         typeof args.unreadOnly === "boolean" ? args.unreadOnly : true;
-      const emails = await listEmails(config, { limit, unreadOnly });
-      if (emails.length === 0) {
+      const result = await listEmails(config, { limit, unreadOnly });
+      if (result.items.length === 0) {
         return { ok: true, output: "Nenhum email encontrado." };
       }
-      const output = emails
-        .map(
-          (mail) =>
-            `#${mail.id} | ${mail.from} | ${mail.subject} | ${mail.date}`,
-        )
+      const total = result.totalUnread;
+      const header = unreadOnly
+        ? `📬 Nao lidos: ${total} (mostrando ${Math.min(limit, result.items.length)})`
+        : `📬 Emails: ${result.items.length}`;
+      const output = result.items
+        .map((mail, index) => formatEmailLine(mail, index + 1))
         .join("\n");
-      return { ok: true, output };
+      const more =
+        unreadOnly && total > result.items.length
+          ? `\n…e mais ${total - result.items.length} nao lidos.`
+          : "";
+      return { ok: true, output: `${header}\n${output}${more}` };
     }
 
     if (action === "read") {
@@ -129,4 +134,28 @@ export class EmailSkill implements Skill {
 
     return { ok: false, output: "Ação de email inválida." };
   }
+}
+
+function computeEmailPriority(mail: EmailSummary): { urgency: string; importance: string } {
+  const from = `${mail.from}`.toLowerCase();
+  const subject = `${mail.subject}`.toLowerCase();
+  const urgentKeywords = ["urgent", "urgente", "asap", "imediato", "today", "hoje"];
+  const importantFrom = ["@apple.com", "icloud.com", "bank", "paypal", "gov", "hmrc", "linkedin", "indeed"];
+  const isUrgent = urgentKeywords.some((k) => subject.includes(k));
+  const isImportant = importantFrom.some((k) => from.includes(k));
+  return {
+    urgency: isUrgent ? "alta" : "normal",
+    importance: isImportant ? "alta" : "normal",
+  };
+}
+
+function formatEmailLine(mail: EmailSummary, index: number): string {
+  const priority = computeEmailPriority(mail);
+  const badge = `(${priority.importance}/${priority.urgency})`;
+  return [
+    `${index}) #${mail.id} ${badge}`,
+    `   De: ${mail.from}`,
+    `   Assunto: ${mail.subject}`,
+    `   Data: ${mail.date}`,
+  ].join("\n");
 }

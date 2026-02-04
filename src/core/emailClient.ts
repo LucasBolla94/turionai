@@ -18,10 +18,15 @@ export interface EmailContent {
   text: string;
 }
 
+export interface EmailListResult {
+  totalUnread: number;
+  items: EmailSummary[];
+}
+
 export async function listEmails(
   config: EmailConfig,
   options: { limit: number; unreadOnly: boolean },
-): Promise<EmailSummary[]> {
+): Promise<EmailListResult> {
   const connection = await imaps.connect({
     imap: {
       user: config.user,
@@ -40,6 +45,15 @@ export async function listEmails(
     markSeen: false,
   };
   const results = await connection.search(searchCriteria, fetchOptions);
+  let totalUnread = results.length;
+  if (!options.unreadOnly) {
+    try {
+      const unread = await connection.search(["UNSEEN"], fetchOptions);
+      totalUnread = unread.length;
+    } catch {
+      totalUnread = 0;
+    }
+  }
   const summaries = results
     .map((res: { parts: Array<{ which: string; body: any }>; attributes: { uid: number } }) => {
       const header = res.parts.find((p: { which: string }) => p.which.includes("HEADER"))?.body;
@@ -53,7 +67,7 @@ export async function listEmails(
     .reverse()
     .slice(0, options.limit);
   await connection.end();
-  return summaries;
+  return { totalUnread, items: summaries };
 }
 
 export async function readEmail(
