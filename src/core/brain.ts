@@ -120,6 +120,11 @@ export async function interpretStrictJson(input: string): Promise<BrainResult | 
     "missing: array de strings.",
     "reply: resposta curta e natural em português.",
     "actions: itens com type (create_dir|write_file|run_script) e campos correspondentes.",
+    "Para lembretes: use intent CRON_CREATE com args {action:'create', name:'reminder_<timestamp>', jobType:'reminder', schedule:'ISO-8601', payload:'{\"to\":\"<jid>\",\"message\":\"...\"}', runOnce:true}.",
+    "Para emails: use intents EMAIL_CONNECT, EMAIL_LIST, EMAIL_READ, EMAIL_REPLY, EMAIL_DELETE, EMAIL_EXPLAIN, EMAIL_DRAFT.",
+    "EMAIL_CONNECT args: action:'connect', provider, user, password. EMAIL_LIST args: action:'list', limit, unreadOnly. EMAIL_READ args: action:'read', id. EMAIL_REPLY args: action:'reply', id, body. EMAIL_DELETE args: action:'delete', id.",
+    "EMAIL_EXPLAIN args: action:'explain', id. EMAIL_DRAFT args: action:'draft_reply', id, instruction.",
+    "Para monitoramento de email: use intent CRON_CREATE com jobType 'email_monitor' e payload JSON {to, unreadOnly, limit}.",
   ].join(" ");
 
   const content = await callXai(system, input);
@@ -172,4 +177,25 @@ export async function organizeMemory(input: string): Promise<OrganizerResult | n
 
   const content = await callXai(system, input);
   return extractJson(content) as OrganizerResult | null;
+}
+
+export async function explainEmail(input: string): Promise<string | null> {
+  const system = [
+    "Você é Tur, assistente DevOps.",
+    "Explique o email em linguagem simples e direta.",
+    "Responda em português, até 5 frases.",
+  ].join(" ");
+  const content = await callXai(system, input);
+  return content?.trim() || null;
+}
+
+export async function draftEmailReply(input: string): Promise<string | null> {
+  const system = [
+    "Você é Tur, assistente DevOps.",
+    "Crie uma resposta de email profissional, clara e objetiva.",
+    "Não invente fatos. Use o contexto fornecido.",
+    "Responda apenas com o corpo do email (sem assunto).",
+  ].join(" ");
+  const content = await callXai(system, input);
+  return content?.trim() || null;
 }

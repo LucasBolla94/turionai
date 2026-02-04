@@ -1,4 +1,4 @@
-import { createCron, listCrons, pauseCron, removeCron } from "../core/cronManager";
+import { createCronNormalized, listCrons, pauseCron, removeCron } from "../core/cronManager";
 import { Skill, SkillContext, SkillResult } from "./types";
 
 export class CronSkill implements Skill {
@@ -16,10 +16,19 @@ export class CronSkill implements Skill {
       const schedule = typeof args.schedule === "string" ? args.schedule : "";
       const jobType = typeof args.jobType === "string" ? args.jobType : "";
       const payload = typeof args.payload === "string" ? args.payload : "";
+      const timezone = typeof args.timezone === "string" ? args.timezone : undefined;
+      const runOnce = typeof args.runOnce === "boolean" ? args.runOnce : undefined;
       if (!name || !schedule || !jobType) {
         return { ok: false, output: "Uso: cron add <name> <schedule> <jobType> [payload]" };
       }
-      const job = await createCron(name, schedule, jobType, payload);
+      const job = await createCronNormalized({
+        name,
+        schedule,
+        jobType,
+        payload,
+        timezone,
+        runOnce,
+      });
       return { ok: true, output: `Cron criado: ${job.name} (${job.schedule})` };
     }
 

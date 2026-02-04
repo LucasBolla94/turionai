@@ -2,16 +2,18 @@ import { setInterval } from "node:timers";
 import { initWhatsApp } from "./channels/whatsapp";
 import { initCronManager } from "./core/cronManager";
 
-function main(): void {
+async function main(): Promise<void> {
   const startedAt = new Date().toISOString();
   console.log(`[Turion] iniciado em ${startedAt}`);
 
+  try {
+    await initWhatsApp();
+  } catch (error) {
+    console.error("[Turion] falha ao iniciar WhatsApp:", error);
+  }
+
   initCronManager().catch((error) => {
     console.error("[Turion] falha ao iniciar CronManager:", error);
-  });
-
-  initWhatsApp().catch((error) => {
-    console.error("[Turion] falha ao iniciar WhatsApp:", error);
   });
 
   // Keep the process alive with a no-op heartbeat.
@@ -20,4 +22,6 @@ function main(): void {
   }, 60_000);
 }
 
-main();
+main().catch((error) => {
+  console.error("[Turion] falha ao iniciar:", error);
+});

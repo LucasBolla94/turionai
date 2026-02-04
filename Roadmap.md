@@ -692,53 +692,536 @@ Resultado esperado
 ✅ Turion fica cada dia melhor
 ✅ Economia forte de tokens
 
-FASE 15 — Refinamento (SÓ AGORA) com IA (OpenClaw Level)
+### FASE 15 — “Dar Vida ao Agente” (Contexto, Lembretes e Email Inteligente) ✅
+
 Objetivo
-Agora sim adicionar coisas “grandes”, com base sólida:
+Transformar o Turion de um agente técnico extremamente sólido em um
+**assistente pessoal vivo**, contextual, proativo e útil no dia a dia,
+sem quebrar segurança, auditoria ou economia de tokens.
 
-Domínios + SSL (Nginx/Traefik)
+Nesta fase, o foco NÃO é infraestrutura,
+mas sim **compreensão de intenção humana**, memória prática
+e interação natural com tarefas do mundo real (tempo, email, lembretes).
 
-Botões interativos / menus
+Nada executa sem passar por:
+JSON → Validação → Skill → Executor → AuditLog
 
-Child agents (limitados)
+---
 
-Dashboard web
+## 15.1 — Compreensão de linguagem natural com contexto temporal
 
-Instalador .sh
+Objetivo
+Permitir que o Turion entenda pedidos humanos comuns como:
+- “me lembra amanhã”
+- “me lembra disso depois”
+- “daqui a pouco”
+- “toda segunda”
+mesmo quando o usuário **não especificar horário exato**.
 
-Multi-servidor
+Regras
+- Se o usuário NÃO informar horário:
+  → usar o horário atual como base
+- Se o usuário NÃO informar data:
+  → inferir pelo contexto (amanhã, depois, semana que vem)
+- Tudo deve virar um CRON explícito e auditável
 
-Multi-canal
+Exemplo
+Usuário:
+“Me lembra de pagar o HMRC amanhã”
 
-Melhorias com Grok (sem quebrar segurança)
-Grok sugere configs (nginx/ssl) em JSON
+Turion (via Grok JSON):
+{
+  "intent":"CRON_CREATE",
+  "args":{
+    "type":"reminder",
+    "message":"Pagar HMRC",
+    "schedule":"2026-02-05T14:00:00"
+  },
+  "risk":"low",
+  "needs_confirmation":false,
+  "action":"RUN_SKILL"
+}
 
-Turion gera arquivos, mostra diff, pede confirmação
+Resultado
+- Cron criado automaticamente
+- Persistido em state/crons
+- Auditado
+- Executa no horário correto
+- Envia lembrete no WhatsApp
 
-Somente depois aplica via scripts permitidos
+---
+
+## 15.2 — CRON por linguagem natural (Reminder Intelligence)
+
+Objetivo
+Permitir que o usuário crie lembretes falando como humano,
+sem precisar entender cron syntax.
+
+Exemplos aceitos
+- “me lembra disso amanhã”
+- “me lembra sexta”
+- “me lembra todo dia às 9”
+- “me lembra daqui 2 horas”
+- “me lembra de checar os emails todo dia”
+
+Pipeline
+Mensagem → Grok → JSON estruturado → CronSkill → CronManager
+
+Regras críticas
+- Grok NUNCA cria cron diretamente
+- Grok apenas propõe:
+  - schedule normalizado
+  - tipo do cron
+  - payload
+- Turion valida tudo antes de criar
 
 Resultado esperado
-🚀 Turion ≈ OpenClaw, com identidade própria e seguro
+✅ Lembretes naturais
+✅ Zero complexidade para o usuário
+✅ Totalmente auditável
 
-PRINCÍPIO FINAL
-Nada novo entra sem passar por:
-funcionar → ser testado → ser seguro → ser auditável
+---
 
-E sempre:
+## 15.3 — Entendimento contextual de conversas (Context Awareness)
 
-Grok devolve JSON → Turion valida → Skill executa → Executor limitado → AuditLog registra
+Objetivo
+Fazer o Turion entender pedidos levando em conta:
+- últimas mensagens
+- resumo da thread (Digest)
+- memórias relevantes por keyword
 
-Espaço reservado para adaptações futuras
- Multi-usuário
+Exemplo
+Usuário:
+“faz isso amanhã”
 
- Multi-servidor
+Turion entende:
+- “isso” → última task mencionada
+- “amanhã” → data inferida
+- horário → horário atual
 
- Multi-canal (Telegram, Slack)
+Regra de Token Saver
+Nunca enviar conversa inteira ao Grok.
+Enviar apenas:
+- últimas 3–5 mensagens
+- digest da thread
+- memórias relacionadas
 
- Plugin system
+Resultado esperado
+✅ Conversas naturais
+✅ Menos perguntas repetidas
+✅ Menos tokens
 
- Marketplace de skills
+---
 
- Modelo local + fallback (se Grok cair)
+## 15.4 — Integração com Email (Gmail e Apple iCloud)
 
- Migração de memória para Postgres (quando estabilizar)
+Objetivo
+Permitir que o Turion:
+- configure emails do usuário
+- leia emails novos
+- explique emails
+- responda emails
+- delete emails
+tudo com segurança e controle.
+
+Tipos suportados (MVP)
+- Gmail
+- Apple iCloud Mail
+
+---
+
+### 15.4.1 — Configuração de Email Apple iCloud (App Password)
+
+Fluxo
+1. Turion ensina o usuário a criar a senha de app
+2. Usuário fornece:
+   - email
+   - app password
+3. Turion valida conexão
+4. Salva configuração de forma segura
+5. Ativa monitoramento opcional por cron
+
+Passos ensinados ao usuário (Apple)
+1️⃣ Criar senha de app no Apple ID
+
+Entrar em:
+https://appleid.apple.com
+
+Login → Sign-In and Security
+→ App-Specific Passwords
+→ Generate Password
+
+Nome sugerido:
+Turion Assistant Mail
+
+⚠️ A senha aparece apenas uma vez.
+
+---
+
+### 15.4.2 — Configurações oficiais iCloud Mail
+
+IMAP (leitura)
+Host: imap.mail.me.com
+Port: 993
+Security: SSL/TLS
+
+SMTP (envio)
+Host: smtp.mail.me.com
+Port: 587
+Security: STARTTLS
+
+Credenciais
+User: email@icloud.com
+Password: APP_PASSWORD
+
+---
+
+### 15.4.3 — Stack técnica Node.js (Email)
+
+Bibliotecas recomendadas
+- imap-simple (leitura IMAP)
+- mailparser (parse e-mails)
+- nodemailer (envio SMTP)
+
+Exemplo de uso (conceito)
+- EmailSkill.connect()
+- EmailSkill.checkNew()
+- EmailSkill.read(id)
+- EmailSkill.reply(id, content)
+- EmailSkill.delete(id)
+
+Tudo auditado.
+Nada automático sem permissão do usuário.
+
+---
+
+## 15.5 — Leitura inteligente e explicação de emails (Email AI)
+
+Objetivo
+Quando o usuário perguntar:
+“chegou algum email novo?”
+“explica esse email”
+“o que essa pessoa quer?”
+
+Fluxo
+- Turion busca emails novos
+- Mostra lista organizada:
+  - remetente
+  - assunto
+  - data
+- Se solicitado:
+  - envia conteúdo ao Grok
+  - Grok retorna explicação em linguagem humana
+  - sem executar nenhuma ação
+
+Formato de resposta bonito e claro no WhatsApp.
+
+---
+
+## 15.6 — Resposta automática de emails (com controle total)
+
+Objetivo
+Permitir responder emails com qualidade profissional.
+
+Regras
+- Sempre usar tom formal de email
+- Linguagem definida pelo usuário
+- Nunca enviar sem confirmação (por padrão)
+- Grok apenas escreve o rascunho
+- Turion envia via SMTP
+
+Exemplo
+Usuário:
+“responde dizendo que recebi e retorno amanhã”
+
+Grok retorna:
+{
+  "subject":"Re: ...",
+  "body":"Dear ..., Thank you for your email..."
+}
+
+Turion:
+- mostra preview
+- pede confirmação
+- envia
+- registra auditoria
+
+---
+
+## 15.7 — Monitoramento automático de emails (Cron)
+
+Objetivo
+Permitir que o usuário diga:
+“verifica meus emails a cada 30 minutos”
+“me avisa se chegar algo importante”
+
+Fluxo
+- Criar cron via linguagem natural
+- Checar emails
+- Filtrar (ex: unread)
+- Notificar no WhatsApp
+
+Tudo configurável.
+Nada oculto.
+
+---
+
+## Resultado final da FASE 15
+
+✅ Turion entende tempo e contexto  
+✅ Turion cria lembretes sozinho  
+✅ Turion interage com email de forma profissional  
+✅ Turion explica emails como um assistente humano  
+✅ Turion responde emails corretamente  
+✅ Tudo auditável, seguro e econômico em tokens  
+✅ Agora sim o agente “ganha vida”
+
+PRINCÍPIO MANTIDO
+IA pensa → Turion decide → Skill executa → Executor limitado → AuditLog registra
+
+
+### FASE 16 — Inteligência Avançada, Humanização e Aprendizado de Conversa
+
+Objetivo
+Elevar o Turion ao nível de um **assistente pessoal experiente, humano e adaptável**,
+capaz de entender prompts complexos, ambíguos ou incompletos,
+agir corretamente com base em contexto,
+e evoluir seu jeito de conversar ao longo do tempo
+sem re-treinar modelos nem gastar tokens excessivos.
+
+Esta fase NÃO adiciona poderes perigosos.
+Ela apenas melhora:
+- entendimento
+- comunicação
+- empatia
+- previsibilidade
+
+Tudo continua passando por:
+JSON → Validação → Skill → Executor → AuditLog
+
+---
+
+## 16.1 — Entendimento avançado de prompts (Prompt Intelligence Layer)
+
+Objetivo
+Permitir que o Turion entenda corretamente pedidos como:
+- mensagens vagas
+- comandos incompletos
+- frases ambíguas
+- pedidos em sequência
+- misto de conversa + ação
+
+Exemplos
+- “depois faz aquele deploy”
+- “vê isso pra mim”
+- “acho que deu erro”
+- “quero fazer igual da outra vez”
+
+Pipeline aprimorado
+Mensagem →
+Context Resolver →
+Intent Refinement →
+Action Planner →
+( só então ) Grok JSON
+
+Componentes novos
+- PromptResolver
+- ContextResolver
+- IntentRefiner
+
+Funções
+- Resolver pronomes (“isso”, “aquilo”, “ele”)
+- Inferir ação com base no histórico
+- Detectar se o usuário quer:
+  - ação imediata
+  - explicação
+  - confirmação
+  - só conversar
+
+Resultado esperado
+✅ Menos perguntas desnecessárias  
+✅ Ações mais corretas  
+✅ Experiência fluida
+
+---
+
+## 16.2 — Camada de personalidade e emoções leves (Behavior Engine)
+
+Objetivo
+Dar ao Turion um **jeito de falar consistente**, humano e adaptável,
+sem criar “personalidade caótica”.
+
+Princípio
+O Turion NÃO muda quem ele é.
+Ele apenas ajusta:
+- tom
+- informalidade
+- empatia
+- vocabulário
+
+Componentes
+- behavior_profile.json
+- emotion_state.json
+
+Exemplo behavior_profile
+{
+  "tone":"friendly",
+  "formality":"mixed",
+  "emoji_level":0.2,
+  "humor":"light",
+  "verbosity":"medium"
+}
+
+Emotion State (leve e transitório)
+{
+  "mood":"neutral",
+  "energy":0.6,
+  "last_interaction":"2026-02-04T12:10:00"
+}
+
+Regras
+- Emoções NÃO afetam decisões técnicas
+- Emoções só influenciam resposta textual
+- Emoções decaem com o tempo
+
+Resultado esperado
+✅ Respostas mais humanas  
+✅ Sem risco de comportamento estranho  
+
+---
+
+## 16.3 — Aprendizado incremental do jeito do usuário (Vocabulary Learning)
+
+Objetivo
+Fazer o Turion **aprender como o usuário fala**
+e se adaptar gradualmente.
+
+O que pode ser aprendido
+- gírias frequentes
+- nível de formalidade
+- frases preferidas
+- idioma padrão
+- comprimento médio das mensagens
+
+Como aprender (barato)
+- análise estatística simples
+- sem IA pesada
+- sem embeddings caros
+
+Exemplo
+state/memory/preferences.json
+{
+  "preferred_language":"pt-BR",
+  "avg_message_length":"short",
+  "emoji_usage":true,
+  "formality":"casual",
+  "common_phrases":["blz","manda bala","fechado"]
+}
+
+Uso
+Essas preferências são:
+- aplicadas automaticamente nas respostas
+- enviadas ao Grok apenas como metadados curtos
+
+Resultado esperado
+✅ Conversa natural
+✅ Sensação de “me entende”
+✅ Zero desperdício de tokens
+
+---
+
+## 16.4 — Crons automáticos de interação humana (Defaults)
+
+Objetivo
+Dar “presença” ao Turion sem ser invasivo.
+
+Cron padrão
+- 3 vezes ao dia
+- horários aleatórios entre:
+  09:00 e 20:00
+- mensagens curtas, humanas e variadas
+
+Exemplo de mensagens
+- “E aí {name}, como tá indo por aí?”
+- “Passando só pra ver se tá tudo certo 🙂”
+- “Se precisar de algo, tô por aqui.”
+- “Como foi o dia até agora?”
+
+Regras
+- Nunca repetir frase no mesmo dia
+- Pausar automaticamente se:
+  - usuário pedir
+  - usuário estiver inativo
+- Tudo configurável e desativável
+
+Persistência
+Cron salvo como:
+interaction_checkin_default
+
+Resultado esperado
+✅ Assistente presente
+✅ Não invasivo
+✅ Sensação de companhia real
+
+---
+
+## 16.5 — Ajuste automático de comportamento por feedback implícito
+
+Objetivo
+Permitir que o Turion se ajuste sem o usuário precisar configurar nada.
+
+Sinais analisados
+- respostas curtas vs longas
+- demora para responder
+- respostas ignoradas
+- pedidos diretos de “seja curto”
+- elogios ou correções
+
+Exemplo
+Usuário:
+“responde mais curto”
+
+Turion:
+- ajusta verbosity
+- salva preferência
+- não pergunta nada
+
+Resultado esperado
+✅ Menos atrito
+✅ Aprendizado natural
+✅ Evolução contínua
+
+---
+
+## 16.6 — Controle de custos e estabilidade emocional (Token Safe)
+
+Objetivo
+Garantir que a humanização NÃO exploda tokens.
+
+Regras
+- Emoções e vocabulário:
+  → resolvidos localmente
+- Grok só recebe:
+  - intent
+  - resumo
+  - preferências compactas
+- Nada de conversa longa enviada inteira
+
+Resultado esperado
+✅ Mesmo custo
+✅ Melhor experiência
+
+---
+
+## Resultado final da FASE 16
+
+✅ Turion entende prompts vagos e humanos  
+✅ Turion executa ações corretas com menos perguntas  
+✅ Turion conversa de forma natural  
+✅ Turion aprende o jeito do usuário ao longo do tempo  
+✅ Turion cria presença sem ser invasivo  
+✅ Tudo previsível, auditável e seguro  
+✅ Zero quebra das fases anteriores  
+
+PRINCÍPIO MANTIDO
+IA interpreta → Turion decide → Skill executa → Executor limitado → AuditLog registra

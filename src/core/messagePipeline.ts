@@ -28,6 +28,7 @@ const COMMAND_KEYWORDS = new Set([
   "mem",
   "time",
   "timezone",
+  "email",
 ]);
 
 const CHAT_KEYWORDS = new Set([

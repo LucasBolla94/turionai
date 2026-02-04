@@ -31,6 +31,11 @@ import {
   searchMemoryByKeywords,
 } from "../core/memoryStore";
 import { getCurrentTimeString, setTimezone } from "../core/timezone";
+import { registerCronHandler } from "../core/cronManager";
+import { readLatestDigest } from "../core/conversationStore";
+import { getTimezone } from "../core/timezone";
+import { EmailSkill } from "../skills/emailSkill";
+import { clearPending, getPending, setPending } from "../core/pendingActions";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -123,8 +128,15 @@ export async function initWhatsApp(): Promise<WASocket> {
       if (!text.trim()) {
         continue;
       }
+      const sanitizedText = sanitizeConversationText(text);
       if (!authorized) {
         console.warn(`[Turion] msg bloqueada`, { sender, from });
+        continue;
+      }
+      const pending = await getPending(threadId);
+      const decision = parseConfirmation(text);
+      if (pending && decision) {
+        await handlePendingDecision(socket, to, threadId, pending, decision);
         continue;
       }
       const result = classifyMessage({
@@ -138,7 +150,7 @@ export async function initWhatsApp(): Promise<WASocket> {
         from: sender,
         thread: threadId,
         direction: "in",
-        text,
+        text: sanitizedText,
       }).catch(() => undefined);
       console.log(`[Turion] msg de ${from}: ${text}`);
       console.log(`[Turion] intent: ${result.intent}`, result);
@@ -155,6 +167,40 @@ export async function initWhatsApp(): Promise<WASocket> {
         });
       }
     }
+  });
+
+  registerCronHandler("reminder", async (job) => {
+    const payload = safeJson<{ to?: string; message?: string }>(job.payload);
+    const messageText = payload?.message ?? "Lembrete";
+    const to = payload?.to ?? "";
+    if (!to) return;
+    await socket.sendMessage(to, { text: `⏰ Lembrete: ${messageText}` });
+    await appendConversation({
+      ts: new Date().toISOString(),
+      from: "Tur",
+      thread: to.replace(/[^\w]/g, "_"),
+      direction: "out",
+      text: `⏰ Lembrete: ${messageText}`,
+    });
+  });
+
+  registerCronHandler("email_monitor", async (job) => {
+    const payload = safeJson<{ to?: string; unreadOnly?: boolean; limit?: number }>(
+      job.payload,
+    );
+    const to = payload?.to ?? "";
+    if (!to) return;
+    const emailSkill = new EmailSkill();
+    const unreadOnly = payload?.unreadOnly !== false;
+    const result = await emailSkill.execute(
+      { action: "list", limit: payload?.limit ?? 5, unreadOnly },
+      { platform: process.platform },
+    );
+    if (!result.ok) {
+      await socket.sendMessage(to, { text: `Erro ao checar emails: ${result.output}` });
+      return;
+    }
+    await socket.sendMessage(to, { text: result.output });
   });
 
   return socket;
@@ -428,6 +474,24 @@ async function handleCommand(
     return;
   }
 
+  if (cmd === "email") {
+    const action = args[0];
+    const emailSkill = new EmailSkill();
+    if (!action) {
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Uso: email connect|list|read|reply|delete ...",
+      );
+      return;
+    }
+    const payload = parseEmailCommandArgs(action, args.slice(1));
+    const result = await emailSkill.execute(payload, { platform: process.platform });
+    await sendAndLog(socket, to, threadId, result.output);
+    return;
+  }
+
   if (cmd === "memory" || cmd === "mem") {
     const action = args[0];
     if (!action) {
@@ -531,8 +595,20 @@ async function handleBrain(
       return;
     }
 
-    const memoryContext = await buildMemoryContext(text);
-    const input = memoryContext ? `${memoryContext}\nMensagem: ${text}` : text;
+    const [memoryContext, recent, digest, timezone] = await Promise.all([
+      buildMemoryContext(text),
+      readRecentConversation(threadId, 5),
+      readLatestDigest(threadId),
+      getTimezone(),
+    ]);
+    const now = new Date().toISOString();
+    const parts: string[] = [];
+    parts.push(`Agora: ${now} (${timezone})`);
+    if (digest) parts.push(`Resumo da thread: ${digest}`);
+    if (recent.length) parts.push(`Ultimas mensagens:\n${recent.join("\n")}`);
+    if (memoryContext) parts.push(memoryContext);
+    parts.push(`Mensagem: ${text}`);
+    const input = parts.join("\n");
     const result = await interpretStrictJson(input);
     if (!result) {
       await sendAndLog(socket, to, threadId, "IA sem resposta válida.");
@@ -550,6 +626,38 @@ async function handleBrain(
       await sendAndLog(socket, to, threadId, responseLines.join("\n"));
     }
 
+    if (result.needs_confirmation && (result.action === "RUN_PLAN" || result.action === "RUN_SKILL")) {
+      if (result.action === "RUN_PLAN" && Array.isArray(result.plan)) {
+        await setPending(threadId, {
+          type: "RUN_PLAN",
+          plan: result.plan,
+          createdAt: new Date().toISOString(),
+        });
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Confirma? Responda 'confirmar' ou 'cancelar'.",
+        );
+        return;
+      }
+      if (result.action === "RUN_SKILL") {
+        await setPending(threadId, {
+          type: "RUN_SKILL",
+          intent: result.intent,
+          args: result.args ?? {},
+          createdAt: new Date().toISOString(),
+        });
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Confirma? Responda 'confirmar' ou 'cancelar'.",
+        );
+        return;
+      }
+    }
+
     if (result.action === "RUN_PLAN" && Array.isArray(result.plan)) {
       if (result.needs_confirmation) {
         return;
@@ -562,6 +670,95 @@ async function handleBrain(
     }
 
     if (result.action === "RUN_SKILL") {
+      if (result.intent === "CRON_CREATE") {
+        const args = result.args ?? {};
+        const jobType = typeof args.jobType === "string" ? args.jobType : "";
+        if (jobType === "reminder") {
+          const message =
+            typeof args.message === "string"
+              ? args.message
+              : typeof args.payload === "string"
+                ? args.payload
+                : "";
+          const name =
+            typeof args.name === "string" && args.name.length > 0
+              ? args.name
+              : `reminder_${Date.now()}`;
+          const schedule = typeof args.schedule === "string" ? args.schedule : "";
+          const timezone = await getTimezone();
+          result.args = {
+            action: "create",
+            name,
+            schedule,
+            jobType: "reminder",
+            payload: JSON.stringify({ to, message }),
+            runOnce: true,
+            timezone,
+          };
+        }
+        if (jobType === "email_monitor") {
+          const schedule = typeof args.schedule === "string" ? args.schedule : "";
+          const limit = typeof args.limit === "number" ? args.limit : 5;
+          const unreadOnly =
+            typeof args.unreadOnly === "boolean" ? args.unreadOnly : true;
+          const timezone = await getTimezone();
+          const name =
+            typeof args.name === "string" && args.name.length > 0
+              ? args.name
+              : `email_monitor_${Date.now()}`;
+          result.args = {
+            action: "create",
+            name,
+            schedule,
+            jobType: "email_monitor",
+            payload: JSON.stringify({ to, unreadOnly, limit }),
+            runOnce: false,
+            timezone,
+          };
+        }
+      }
+      if (result.intent.startsWith("EMAIL_")) {
+        if (result.intent === "EMAIL_REPLY") {
+          const args = result.args ?? {};
+          const id = typeof args.id === "number" ? args.id : Number(args.id);
+          const body = typeof args.body === "string" ? args.body : "";
+          const instruction =
+            typeof args.instruction === "string" ? args.instruction : "";
+          if (!id) {
+            await sendAndLog(socket, to, threadId, "Informe o ID do email.");
+            return;
+          }
+          if (!body && instruction) {
+            const emailSkill = new EmailSkill();
+            const draftResult = await emailSkill.execute(
+              { action: "draft_reply", id, instruction },
+              { platform: process.platform },
+            );
+            if (!draftResult.ok) {
+              await sendAndLog(socket, to, threadId, draftResult.output);
+              return;
+            }
+            await sendAndLog(
+              socket,
+              to,
+              threadId,
+              `Rascunho:\n${draftResult.output}\n\nConfirma envio? Responda 'confirmar' ou 'cancelar'.`,
+            );
+            await setPending(threadId, {
+              type: "RUN_SKILL",
+              intent: "EMAIL_REPLY",
+              args: { action: "reply", id, body: draftResult.output },
+              createdAt: new Date().toISOString(),
+            });
+            return;
+          }
+          if (!body) {
+            await sendAndLog(socket, to, threadId, "O que devo responder?");
+            return;
+          }
+        }
+        result.args = normalizeEmailArgs(result.intent, result.args ?? {});
+      }
       const skill = findSkillByIntent(result.intent);
       if (!skill) {
         await socket.sendMessage(to, { text: "Skill não encontrada." });
@@ -614,6 +811,118 @@ async function maybeDigest(threadId: string): Promise<void> {
   const summary = await summarizeConversation(recent.join("\n"));
   if (!summary) return;
   await appendDigest(threadId, summary);
+}
+
+function safeJson<T = Record<string, unknown>>(payload: string): T | null {
+  try {
+    return JSON.parse(payload) as T;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeConversationText(text: string): string {
+  const lowered = text.toLowerCase();
+  const sensitiveHints = ["app password", "senha", "password", "email connect"];
+  if (sensitiveHints.some((hint) => lowered.includes(hint))) {
+    return "[redacted]";
+  }
+  return text;
+}
+
+function parseEmailCommandArgs(action: string, rest: string[]): Record<string, unknown> {
+  if (action === "connect") {
+    return {
+      action: "connect",
+      provider: rest[0],
+      user: rest[1],
+      password: rest.slice(2).join(" "),
+    };
+  }
+  if (action === "list") {
+    const limit = rest[0] ? Number(rest[0]) : 5;
+    return { action: "list", limit, unreadOnly: true };
+  }
+  if (action === "read") {
+    return { action: "read", id: Number(rest[0]) };
+  }
+  if (action === "reply") {
+    return { action: "reply", id: Number(rest[0]), body: rest.slice(1).join(" ") };
+  }
+  if (action === "explain") {
+    return { action: "explain", id: Number(rest[0]) };
+  }
+  if (action === "draft") {
+    return { action: "draft_reply", id: Number(rest[0]), instruction: rest.slice(1).join(" ") };
+  }
+  if (action === "delete") {
+    return { action: "delete", id: Number(rest[0]) };
+  }
+  if (action === "monitor") {
+    return { action: "monitor" };
+  }
+  return { action };
+}
+
+function parseConfirmation(text: string): "confirm" | "cancel" | null {
+  const normalized = text.trim().toLowerCase();
+  const confirm = new Set(["confirmar", "sim", "ok", "confirmo"]);
+  const cancel = new Set(["cancelar", "nao", "não", "cancela"]);
+  if (confirm.has(normalized)) return "confirm";
+  if (cancel.has(normalized)) return "cancel";
+  return null;
+}
+
+async function handlePendingDecision(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, unknown> } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, unknown> }> },
+  decision: "confirm" | "cancel",
+): Promise<void> {
+  if (decision === "cancel") {
+    await clearPending(threadId);
+    await sendAndLog(socket, to, threadId, "Cancelado.");
+    return;
+  }
+  if (pending.type === "RUN_PLAN") {
+    const outputs = await runPlan(pending.plan, { platform: process.platform });
+    await clearPending(threadId);
+    if (outputs.length > 0) {
+      await sendAndLog(socket, to, threadId, outputs.join("\n"));
+    } else {
+      await sendAndLog(socket, to, threadId, "Plano executado.");
+    }
+    return;
+  }
+  const skill = findSkillByIntent(pending.intent);
+  if (!skill) {
+    await clearPending(threadId);
+    await sendAndLog(socket, to, threadId, "Skill não encontrada.");
+    return;
+  }
+  const outcome = await skill.execute(pending.args ?? {}, { platform: process.platform });
+  await clearPending(threadId);
+  await sendAndLog(socket, to, threadId, outcome.output);
+}
+
+function normalizeEmailArgs(
+  intent: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const actionMap: Record<string, string> = {
+    EMAIL_CONNECT: "connect",
+    EMAIL_LIST: "list",
+    EMAIL_READ: "read",
+    EMAIL_REPLY: "reply",
+    EMAIL_DELETE: "delete",
+    EMAIL_EXPLAIN: "explain",
+    EMAIL_DRAFT: "draft_reply",
+  };
+  return {
+    action: actionMap[intent] ?? args.action,
+    ...args,
+  };
 }
 
 function parseTimeRequest(text: string): boolean {

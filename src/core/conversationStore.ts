@@ -51,3 +51,16 @@ export async function appendDigest(threadId: string, summary: string): Promise<v
   existing.push({ thread: threadId, summary, ts: new Date().toISOString() });
   await writeFile(filePath, JSON.stringify(existing, null, 2), "utf8");
 }
+
+export async function readLatestDigest(threadId: string): Promise<string | null> {
+  const filePath = resolve(DIGEST_DIR, `${dayKey()}.json`);
+  try {
+    const current = await readFile(filePath, "utf8");
+    const entries = JSON.parse(current) as Array<{ thread: string; summary: string }>;
+    const filtered = entries.filter((entry) => entry.thread === threadId);
+    if (filtered.length === 0) return null;
+    return filtered[filtered.length - 1]?.summary ?? null;
+  } catch {
+    return null;
+  }
+}

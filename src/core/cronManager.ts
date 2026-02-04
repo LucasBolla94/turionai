@@ -10,12 +10,16 @@ export interface CronJob {
   payload: string;
   enabled: boolean;
   createdAt: string;
+  timezone?: string;
+  runOnce?: boolean;
+  lastRun?: string;
 }
 
 const CRON_DIR = resolve("state", "crons");
 const CRON_STATE_PATH = resolve(CRON_DIR, "crons.json");
 
 const tasks = new Map<string, ScheduledTask>();
+const handlers = new Map<string, (job: CronJob) => Promise<void>>();
 
 async function ensureStateDir(): Promise<void> {
   await mkdir(CRON_DIR, { recursive: true });
@@ -35,17 +39,46 @@ async function saveState(jobs: CronJob[]): Promise<void> {
   await writeFile(CRON_STATE_PATH, JSON.stringify(jobs, null, 2), "utf8");
 }
 
+async function markJobRun(jobName: string): Promise<void> {
+  const jobs = await loadState();
+  const job = jobs.find((j) => j.name === jobName);
+  if (!job) return;
+  job.lastRun = new Date().toISOString();
+  if (job.runOnce) {
+    job.enabled = false;
+  }
+  await saveState(jobs);
+}
+
 function buildTask(job: CronJob): ScheduledTask {
-  return cron.schedule(job.schedule, () => {
-    if (job.jobType === "memory_organizer_daily") {
-      console.log(`[Turion][Cron] ${job.name} -> ${job.jobType}`);
-      runMemoryOrganizer().catch((error) => {
-        console.error("[Turion][Cron] Memory organizer falhou:", error);
-      });
-      return;
-    }
-    console.log(`[Turion][Cron] ${job.name} -> ${job.jobType}`, job.payload);
-  });
+  return cron.schedule(
+    job.schedule,
+    () => {
+      if (job.runOnce && job.lastRun) {
+        return;
+      }
+      if (job.jobType === "memory_organizer_daily") {
+        console.log(`[Turion][Cron] ${job.name} -> ${job.jobType}`);
+        runMemoryOrganizer()
+          .then(() => markJobRun(job.name))
+          .catch((error) => {
+            console.error("[Turion][Cron] Memory organizer falhou:", error);
+          });
+        return;
+      }
+      const handler = handlers.get(job.jobType);
+      if (!handler) {
+        console.log(`[Turion][Cron] ${job.name} -> ${job.jobType}`, job.payload);
+        return;
+      }
+      handler(job)
+        .then(() => markJobRun(job.name))
+        .catch((error) => {
+          console.error(`[Turion][Cron] ${job.name} falhou:`, error);
+        });
+    },
+    job.timezone ? { timezone: job.timezone } : undefined,
+  );
 }
 
 export async function initCronManager(): Promise<void> {
@@ -70,6 +103,13 @@ export async function initCronManager(): Promise<void> {
   }
 }
 
+export function registerCronHandler(
+  jobType: string,
+  handler: (job: CronJob) => Promise<void>,
+): void {
+  handlers.set(jobType, handler);
+}
+
 export async function listCrons(): Promise<CronJob[]> {
   return loadState();
 }
@@ -79,6 +119,7 @@ export async function createCron(
   schedule: string,
   jobType: string,
   payload: string,
+  options: { timezone?: string; runOnce?: boolean } = {},
 ): Promise<CronJob> {
   if (!cron.validate(schedule)) {
     throw new Error("Schedule inválido.");
@@ -94,6 +135,8 @@ export async function createCron(
     payload,
     enabled: true,
     createdAt: new Date().toISOString(),
+    timezone: options.timezone,
+    runOnce: options.runOnce,
   };
   jobs.push(job);
   await saveState(jobs);
@@ -103,6 +146,60 @@ export async function createCron(
   task.start();
 
   return job;
+}
+
+function isIsoDate(value: string): boolean {
+  if (!value.includes("T")) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime());
+}
+
+function cronFromDate(date: Date, timeZone?: string): string {
+  if (!timeZone) {
+    return `${date.getMinutes()} ${date.getHours()} ${date.getDate()} ${
+      date.getMonth() + 1
+    } *`;
+  }
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = formatter.formatToParts(date);
+  const lookup = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const month = Number(lookup("month"));
+  const day = Number(lookup("day"));
+  const hour = Number(lookup("hour"));
+  const minute = Number(lookup("minute"));
+  return `${minute} ${hour} ${day} ${month} *`;
+}
+
+export async function createCronNormalized(params: {
+  name: string;
+  schedule: string;
+  jobType: string;
+  payload: string;
+  timezone?: string;
+  runOnce?: boolean;
+}): Promise<CronJob> {
+  const { name, schedule, jobType, payload, timezone, runOnce } = params;
+  if (isIsoDate(schedule)) {
+    const date = new Date(schedule);
+    const now = new Date();
+    if (date.getTime() <= now.getTime()) {
+      throw new Error("Schedule no passado.");
+    }
+    const cronExpr = cronFromDate(date, timezone);
+    return createCron(name, cronExpr, jobType, payload, {
+      timezone,
+      runOnce: true,
+    });
+  }
+  return createCron(name, schedule, jobType, payload, { timezone, runOnce });
 }
 
 export async function pauseCron(name: string): Promise<void> {

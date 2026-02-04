@@ -9,6 +9,9 @@
     "start": "node dist/index.js"
   },
   "devDependencies": {
+    "@types/imap-simple": "^4.2.10",
+    "@types/mailparser": "^3.4.6",
+    "@types/nodemailer": "^7.0.9",
     "@types/qrcode": "^1.5.6",
     "tsx": "^4.19.1",
     "typescript": "^5.5.4"
@@ -16,8 +19,11 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "baileys": "^7.0.0-rc.9",
+    "imap-simple": "^5.1.0",
     "link-preview-js": "^3.2.0",
+    "mailparser": "^3.9.3",
     "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.0",
     "pino": "^10.3.0",
     "qrcode": "^1.5.4",
     "simple-git": "^3.30.0"
