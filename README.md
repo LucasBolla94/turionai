@@ -24,3 +24,14 @@ docker compose up -d
 Notas Windows:
 - Use PowerShell ou CMD com Node.js instalado.
 - Docker requer Docker Desktop.
+
+## Fase 2 (WhatsApp - Baileys)
+
+- Ao rodar, o QR Code aparece no terminal/log.
+- Depois do primeiro login, a sessão fica salva em `state/baileys`.
+
+Para ver logs do container:
+
+```bash
+docker compose logs -f
+```

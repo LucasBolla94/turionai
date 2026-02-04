@@ -11,5 +11,11 @@
   "devDependencies": {
     "tsx": "^4.19.1",
     "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "baileys": "^7.0.0-rc.9",
+    "pino": "^10.3.0",
+    "qrcode": "^1.5.4"
   }
 }
