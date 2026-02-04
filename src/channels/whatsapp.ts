@@ -15,6 +15,7 @@ import { listScripts, runScript } from "../executor/executor";
 import { createCron, listCrons, pauseCron, removeCron } from "../core/cronManager";
 import os from "node:os";
 import { interpretStrictJson } from "../core/brain";
+import { executeActions } from "../core/actionExecutor";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -271,6 +272,11 @@ async function handleBrain(socket: WASocket, to: string, text: string): Promise<
       `Needs confirmation: ${result.needs_confirmation}`,
     ].join("\n");
     await socket.sendMessage(to, { text: response });
+
+    if (result.actions && result.actions.length > 0) {
+      const outputs = await executeActions(result.actions);
+      await socket.sendMessage(to, { text: outputs.join("\n") });
+    }
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Falha no interpretador.";

@@ -118,3 +118,8 @@ O Turion responde com JSON interpretado:
 - Args
 - Missing
 - Needs confirmation
+
+Ações permitidas (executadas com segurança):
+- `create_dir` (somente dentro do workspace)
+- `write_file` (somente dentro do workspace)
+- `run_script` (somente scripts na pasta `scripts/`)

@@ -49,6 +49,12 @@ export interface BrainResult {
   args: Record<string, string | number | boolean | null>;
   missing: string[];
   needs_confirmation: boolean;
+  actions?: Array<{
+    type: "create_dir" | "write_file" | "run_script";
+    path?: string;
+    content?: string;
+    script?: string;
+  }>;
 }
 
 function extractJson(text: string): BrainResult | null {
@@ -68,10 +74,12 @@ export async function interpretStrictJson(input: string): Promise<BrainResult | 
     "Você é o interpretador do Turion (assistente DevOps).",
     "Retorne APENAS JSON válido e nada mais.",
     "Chaves obrigatórias: intent, args, missing, needs_confirmation.",
+    "Chave opcional: actions (array).",
     "intent: string UPPERCASE.",
     "args: objeto simples.",
     "missing: array de strings.",
     "needs_confirmation: boolean.",
+    "actions: itens com type (create_dir|write_file|run_script) e campos correspondentes.",
   ].join(" ");
 
   const content = await callXai(system, input);
