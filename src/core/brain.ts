@@ -236,3 +236,29 @@ export async function draftEmailReply(input: string): Promise<string | null> {
   const content = await callXai(system, input);
   return content?.trim() || null;
 }
+
+export interface OnboardingAnswer {
+  value: string;
+  timezone?: string;
+  verbosity?: "short" | "medium" | "long";
+  formality?: "formal" | "casual";
+  language?: string;
+}
+
+export async function interpretOnboardingAnswer(
+  step: "name" | "role" | "tone" | "timezone" | "language" | "goals",
+  input: string,
+): Promise<OnboardingAnswer | null> {
+  const system = [
+    "Voce eh Tur, assistente pessoal.",
+    "Interprete a resposta do usuario para onboarding e devolva JSON valido.",
+    "Retorne apenas JSON.",
+    "Campos: value (string) sempre.",
+    "Se step=timezone, retorne timezone em formato Region/City.",
+    "Se step=tone, retorne verbosity (short|medium|long) e/ou formality (formal|casual).",
+    "Se step=language, retorne language (ex: pt-BR, en-US).",
+    "Nao invente informacoes.",
+  ].join(" ");
+  const content = await callXai(system, JSON.stringify({ step, input }));
+  return extractJsonGeneric<OnboardingAnswer>(content);
+}

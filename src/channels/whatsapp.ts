@@ -15,7 +15,7 @@ import { classifyMessage } from "../core/messagePipeline";
 import { listScripts, runScript } from "../executor/executor";
 import { createCron, listCrons, pauseCron, removeCron } from "../core/cronManager";
 import os from "node:os";
-import { diagnoseLogs, interpretStrictJson } from "../core/brain";
+import { diagnoseLogs, interpretOnboardingAnswer, interpretStrictJson } from "../core/brain";
 import { executeActions } from "../core/actionExecutor";
 import { getProject, upsertProject } from "../core/projectRegistry";
 import { findSkillByIntent } from "../skills/registry";
@@ -240,14 +240,14 @@ export async function initWhatsApp(): Promise<WASocket> {
           await setOwner(sender);
           await setPending(threadId, {
             type: "OWNER_SETUP",
-            stage: "await_name",
+            stage: "await_api_key",
             createdAt: new Date().toISOString(),
           });
           await sendAndLog(
             socket,
             from,
             threadId,
-            "Boa, pareamos com sucesso. Como posso te chamar?",
+            "Boa, pareamos com sucesso. Agora me envia a API do Grok (XAI_API_KEY).",
           );
           continue;
         }
@@ -2015,8 +2015,10 @@ async function handleOwnerSetup(
   if (!value) return false;
 
   if (pending.stage === "await_name") {
-    await updateOwnerDetails({ owner_name: value });
-    await addMemoryItem("user_fact", `nome do usuario: ${value}`);
+    const ai = await interpretOnboardingAnswer("name", value).catch(() => null);
+    const nameValue = ai?.value?.trim() || value;
+    await updateOwnerDetails({ owner_name: nameValue });
+    await addMemoryItem("user_fact", `nome do usuario: ${nameValue}`);
     await setPending(threadId, {
       type: "OWNER_SETUP",
       stage: "await_role",
@@ -2027,18 +2029,20 @@ async function handleOwnerSetup(
   }
 
   if (pending.stage === "await_role") {
-    await updateOwnerDetails({ owner_role: value });
-    await addMemoryItem("user_fact", `trabalho/area: ${value}`);
+    const ai = await interpretOnboardingAnswer("role", value).catch(() => null);
+    const roleValue = ai?.value?.trim() || value;
+    await updateOwnerDetails({ owner_role: roleValue });
+    await addMemoryItem("user_fact", `trabalho/area: ${roleValue}`);
     await setPending(threadId, {
       type: "OWNER_SETUP",
-      stage: "await_api_key",
+      stage: "await_tone",
       createdAt: new Date().toISOString(),
     });
     await sendAndLog(
       socket,
       to,
       threadId,
-      "Boa. Agora me envie a API do Grok (XAI_API_KEY).",
+      "Certo. Como prefere meu jeito de falar? (curto/medio/longo e formal/casual)",
     );
     return true;
   }
@@ -2058,20 +2062,33 @@ async function handleOwnerSetup(
     await addMemoryItem("decision", "Grok configurado como modelo principal");
     await setPending(threadId, {
       type: "OWNER_SETUP",
-      stage: "await_tone",
+      stage: "await_name",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(
-      socket,
-      to,
-      threadId,
-      "Certo. Como prefere meu jeito de falar? (curto/medio/longo e formal/casual)",
-    );
+    await sendAndLog(socket, to, threadId, "Boa. Como posso te chamar?");
     return true;
   }
 
   if (pending.stage === "await_tone") {
     const normalized = value.toLowerCase();
+    const ai = await interpretOnboardingAnswer("tone", value).catch(() => null);
+    const verbosity = ai?.verbosity;
+    const formality = ai?.formality;
+    if (verbosity) {
+      await setBehaviorProfile({ verbosity });
+      if (verbosity === "short") {
+        await addMemoryItem("user_fact", "prefere respostas curtas");
+      } else if (verbosity === "long") {
+        await addMemoryItem("user_fact", "prefere respostas longas");
+      }
+    }
+    if (formality) {
+      await setBehaviorProfile({ formality, emoji_level: formality === "casual" ? 0.1 : 0 });
+      await addMemoryItem(
+        "user_fact",
+        formality === "formal" ? "prefere tom formal" : "prefere tom casual",
+      );
+    }
     if (normalized.includes("curto")) {
       await setBehaviorProfile({ verbosity: "short" });
       await addMemoryItem("user_fact", "prefere respostas curtas");
@@ -2105,7 +2122,8 @@ async function handleOwnerSetup(
   }
 
   if (pending.stage === "await_timezone") {
-    const tz = normalizeTimezoneInput(value) ?? value;
+    const ai = await interpretOnboardingAnswer("timezone", value).catch(() => null);
+    const tz = ai?.timezone ?? normalizeTimezoneInput(value) ?? value;
     try {
       await setTimezone(tz);
     } catch {
@@ -2128,7 +2146,9 @@ async function handleOwnerSetup(
   }
 
   if (pending.stage === "await_language") {
-    await addMemoryItem("user_fact", `idioma preferido: ${value}`);
+    const ai = await interpretOnboardingAnswer("language", value).catch(() => null);
+    const langValue = ai?.language ?? ai?.value ?? value;
+    await addMemoryItem("user_fact", `idioma preferido: ${langValue}`);
     await setPending(threadId, {
       type: "OWNER_SETUP",
       stage: "await_goals",
@@ -2144,7 +2164,9 @@ async function handleOwnerSetup(
   }
 
   if (pending.stage === "await_goals") {
-    await addMemoryItem("user_fact", `objetivos: ${value}`);
+    const ai = await interpretOnboardingAnswer("goals", value).catch(() => null);
+    const goalValue = ai?.value ?? value;
+    await addMemoryItem("user_fact", `objetivos: ${goalValue}`);
     await clearPending(threadId);
     const owner = await getOwnerState();
     const name = owner?.owner_name ?? "por aqui";
