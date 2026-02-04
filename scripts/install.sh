@@ -32,19 +32,38 @@ install_compose_plugin() {
   if docker compose version >/dev/null 2>&1; then
     return 0
   fi
-  if [ -f /etc/debian_version ]; then
-    echo "[Tur] Instalando docker compose plugin..."
+  if command -v apt-get >/dev/null 2>&1; then
+    echo "[Tur] Instalando docker compose plugin via apt..."
     sudo apt-get update
     sudo apt-get install -y docker-compose-plugin || true
     if docker compose version >/dev/null 2>&1; then
       return 0
     fi
-    echo "[Tur] Tentando docker-compose (legacy)..."
-    sudo apt-get install -y docker-compose
+    echo "[Tur] Tentando docker-compose (legacy) via apt..."
+    sudo apt-get install -y docker-compose || true
+    if docker compose version >/dev/null 2>&1 || docker-compose version >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  echo "[Tur] Instalando docker compose via download direto..."
+  COMPOSE_VERSION="2.27.0"
+  OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  ARCH="$(uname -m)"
+  case "$ARCH" in
+    x86_64|amd64) ARCH="x86_64" ;;
+    aarch64|arm64) ARCH="aarch64" ;;
+  esac
+  sudo mkdir -p /usr/local/lib/docker/cli-plugins
+  sudo curl -fsSL "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-${OS}-${ARCH}" -o /usr/local/lib/docker/cli-plugins/docker-compose
+  sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+  if docker compose version >/dev/null 2>&1; then
     return 0
   fi
-  echo "[Tur] Docker Compose plugin não encontrado."
-  echo "Instale o docker compose plugin manualmente para sua distro."
+
+  echo "[Tur] Docker Compose não pôde ser instalado automaticamente."
+  echo "Instale manualmente para sua distro."
   exit 1
 }
 
