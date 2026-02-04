@@ -152,10 +152,8 @@ export async function initWhatsApp(): Promise<WASocket> {
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       const shouldResetAuth =
         statusCode === DisconnectReason.loggedOut ||
-        statusCode === DisconnectReason.restartRequired ||
         statusCode === DisconnectReason.badSession ||
         statusCode === DisconnectReason.connectionReplaced ||
-        statusCode === 515 ||
         statusCode === 401;
 
       console.warn("[Turion] WhatsApp desconectado.", {
@@ -180,7 +178,9 @@ export async function initWhatsApp(): Promise<WASocket> {
         return;
       }
       if (shouldReconnect) {
-        await initWhatsApp();
+        setTimeout(() => {
+          void initWhatsApp();
+        }, 5000);
       }
     }
   });
