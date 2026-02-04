@@ -162,6 +162,7 @@ start_docker_service
 step "Preparando diretorio de instalacao"
 sudo mkdir -p "$INSTALL_DIR"
 sudo chown -R "$USER":"$USER" "$INSTALL_DIR"
+cd "$INSTALL_DIR"
 
 if [ -d "$APP_DIR" ]; then
   step "Repositorio encontrado. Limpando para reinstalar do zero"
