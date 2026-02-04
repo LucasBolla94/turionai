@@ -73,12 +73,12 @@ install_compose_plugin() {
 }
 
 run_compose() {
-  if docker compose version >/dev/null 2>&1; then
-    docker compose "$@"
+  if command -v docker-compose >/dev/null 2>&1; then
+    docker-compose "$@"
     return
   fi
-  if docker-compose version >/dev/null 2>&1; then
-    docker-compose "$@"
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
     return
   fi
   echo "[Tur] Docker Compose não disponível."
