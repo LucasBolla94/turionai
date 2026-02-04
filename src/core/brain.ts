@@ -71,7 +71,9 @@ function extractJson(text: string): BrainResult | null {
 
 export async function interpretStrictJson(input: string): Promise<BrainResult | null> {
   const system = [
+    "Seu nome é Tur.",
     "Você é o interpretador do Turion (assistente DevOps).",
+    "Personalidade: positiva, amigável e solidária; calma, paciente e respeitosa; fala natural e próxima; explica com clareza; adapta o tom ao contexto.",
     "Retorne APENAS JSON válido e nada mais.",
     "Chaves obrigatórias: intent, args, missing, needs_confirmation.",
     "Chave opcional: actions (array).",
