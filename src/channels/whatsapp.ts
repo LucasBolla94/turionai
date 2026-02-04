@@ -840,7 +840,7 @@ async function handleBrain(
           socket,
           to,
           threadId,
-          "Achei um update novo agora. Quer que eu atualize? (confirmar/cancelar)",
+          "Achei um update novo agora. Quer que eu atualize? (sim/nao)",
         );
         return;
       }
@@ -857,7 +857,7 @@ async function handleBrain(
         socket,
         to,
         threadId,
-        "Nao consegui checar agora. Quer que eu tente atualizar mesmo assim?",
+        "Nao consegui checar agora. Quer que eu tente atualizar mesmo assim? Me diz sim ou nao.",
       );
       await setPending(threadId, {
         type: "RUN_UPDATE",
@@ -884,7 +884,7 @@ async function handleBrain(
           socket,
           to,
           threadId,
-          "Achei uma atualizacao nova por aqui. Quer que eu atualize agora? Responda 'confirmar' ou 'cancelar'.",
+          "Achei uma atualizacao nova por aqui. Quer que eu atualize agora? Me responde com 'sim' ou 'nao'.",
         );
         return;
       }
@@ -905,7 +905,7 @@ async function handleBrain(
         socket,
         to,
         threadId,
-        "Nao consegui validar o status agora, mas posso atualizar mesmo assim. Quer que eu siga? (confirmar/cancelar)",
+        "Nao consegui validar o status agora, mas posso atualizar mesmo assim. Quer que eu siga? (sim/nao)",
       );
       return;
     }
@@ -928,7 +928,7 @@ async function handleBrain(
           socket,
           to,
           threadId,
-          "Encontrei um update novo. Quer que eu atualize agora? (confirmar/cancelar)",
+          "Encontrei um update novo. Quer que eu atualize agora? (sim/nao)",
         );
         return;
       }
@@ -1042,7 +1042,7 @@ async function handleBrain(
           socket,
           to,
           threadId,
-          "Confirma? Responda 'confirmar' ou 'cancelar'.",
+          "Confirma? Me responde com 'sim' ou 'nao'.",
         );
         return;
       }
@@ -1057,7 +1057,7 @@ async function handleBrain(
           socket,
           to,
           threadId,
-          "Confirma? Responda 'confirmar' ou 'cancelar'.",
+          "Confirma? Me responde com 'sim' ou 'nao'.",
         );
         return;
       }
@@ -1147,7 +1147,7 @@ async function handleBrain(
               socket,
               to,
               threadId,
-              `Rascunho:\n${draftResult.output}\n\nConfirma envio? Responda 'confirmar' ou 'cancelar'.`,
+              `Rascunho:\n${draftResult.output}\n\nConfirma envio? Me responde com 'sim' ou 'nao'.`,
             );
             await setPending(threadId, {
               type: "RUN_SKILL",
@@ -1200,6 +1200,7 @@ async function sendTyping(socket: WASocket, to: string, ms = 1200): Promise<void
   await new Promise((r) => setTimeout(r, ms));
   await socket.sendPresenceUpdate("paused", to);
 }
+
 
 async function sendAndLog(
   socket: WASocket,
@@ -1395,17 +1396,6 @@ async function handlePendingEmailConnect(
   return false;
 }
 
-async function executeUpdate(
-  socket: WASocket,
-  to: string,
-  threadId: string,
-  updateScript: string,
-): Promise<void> {
-  await markUpdatePending(to);
-  const output = await runScript(updateScript);
-  await sendAndLog(socket, to, threadId, `${output}\nReiniciando...`);
-  setTimeout(() => process.exit(0), 1000);
-}
 
 
 function parseEmailCommandArgs(action: string, rest: string[]): Record<string, unknown> {
@@ -1628,4 +1618,33 @@ function parseTimezoneRequest(
   }
 
   return null;
+}
+
+function parseUpdatedFiles(output: string): string {
+  const match = output.match(/(\d+)\s+files?\s+changed/i);
+  if (match) return `Atualizando ${match[1]} arquivos...`;
+  return "Atualizando arquivos...";
+}
+
+function randomUpdateBackMessage(): string {
+  const messages = [
+    "Voltei 0km haha. Pronto pra trabalhar!",
+    "Atualizei e ja estou online de novo. Bora!",
+    "Prontinho, ja voltei. O que vamos fazer agora?",
+    "To de volta e tudo certo por aqui!",
+  ];
+  return messages[Math.floor(Math.random() * messages.length)];
+}
+
+async function executeUpdate(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  updateScript: string,
+): Promise<void> {
+  await markUpdatePending(to);
+  const output = await runScript(updateScript);
+  const summary = parseUpdatedFiles(output);
+  await sendAndLog(socket, to, threadId, `${summary} Reiniciando...`);
+  setTimeout(() => process.exit(0), 1000);
 }
