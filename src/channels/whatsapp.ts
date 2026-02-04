@@ -102,7 +102,7 @@ export async function initWhatsApp(): Promise<WASocket> {
     }
   });
 
-  socket.ev.on("messages.upsert", (event) => {
+  socket.ev.on("messages.upsert", async (event) => {
     if (event.type !== "notify") {
       return;
     }
@@ -136,7 +136,7 @@ export async function initWhatsApp(): Promise<WASocket> {
       const pending = await getPending(threadId);
       const decision = parseConfirmation(text);
       if (pending && decision) {
-        await handlePendingDecision(socket, to, threadId, pending, decision);
+        await handlePendingDecision(socket, from, threadId, pending, decision);
         continue;
       }
       const result = classifyMessage({
@@ -436,16 +436,13 @@ async function handleCommand(
     }
     return;
   }
-
   if (cmd === "update") {
     const updateScript =
       process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
     try {
-      const output = await runScript(updateScript);
-      await sendAndLog(socket, to, threadId, `${output}\nReiniciando...`);
-      setTimeout(() => process.exit(0), 1000);
+      await executeUpdate(socket, to, threadId, updateScript);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha na atualização.";
+      const message = error instanceof Error ? error.message : "Falha na atualiza??o.";
       await sendAndLog(socket, to, threadId, `Erro: ${message}`);
     }
     return;
@@ -592,6 +589,20 @@ async function handleBrain(
         const message = error instanceof Error ? error.message : "Fuso horário inválido.";
         await sendAndLog(socket, to, threadId, `Erro: ${message}`);
       }
+      return;
+    }
+
+    if (parseUpdateRequest(text)) {
+      await setPending(threadId, {
+        type: "RUN_UPDATE",
+        createdAt: new Date().toISOString(),
+      });
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Posso atualizar agora usando `--update`. Confirma? Responda 'confirmar' ou 'cancelar'.",
+      );
       return;
     }
 
@@ -830,6 +841,30 @@ function sanitizeConversationText(text: string): string {
   return text;
 }
 
+function parseUpdateRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  const hasUpdate = normalized.includes("atualiz") || normalized.includes("update");
+  const hasTarget =
+    normalized.includes("turion") ||
+    normalized.includes("sistema") ||
+    normalized.includes("bot") ||
+    normalized.includes("agente");
+  return hasUpdate && (hasTarget || normalized.length < 20);
+}
+
+async function executeUpdate(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  updateScript: string,
+): Promise<void> {
+  const output = await runScript(updateScript);
+  await sendAndLog(socket, to, threadId, `${output}\nReiniciando...`);
+  setTimeout(() => process.exit(0), 1000);
+}
+
+
 function parseEmailCommandArgs(action: string, rest: string[]): Record<string, unknown> {
   if (action === "connect") {
     return {
@@ -877,12 +912,24 @@ async function handlePendingDecision(
   socket: WASocket,
   to: string,
   threadId: string,
-  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, unknown> } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, unknown> }> },
+  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
   decision: "confirm" | "cancel",
 ): Promise<void> {
   if (decision === "cancel") {
     await clearPending(threadId);
     await sendAndLog(socket, to, threadId, "Cancelado.");
+    return;
+  }
+  if (pending.type === "RUN_UPDATE") {
+    await clearPending(threadId);
+    const updateScript =
+      process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
+    try {
+      await executeUpdate(socket, to, threadId, updateScript);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha na atualiza??o.";
+      await sendAndLog(socket, to, threadId, `Erro: ${message}`);
+    }
     return;
   }
   if (pending.type === "RUN_PLAN") {
@@ -909,7 +956,7 @@ async function handlePendingDecision(
 function normalizeEmailArgs(
   intent: string,
   args: Record<string, unknown>,
-): Record<string, unknown> {
+): Record<string, string | number | boolean | null> {
   const actionMap: Record<string, string> = {
     EMAIL_CONNECT: "connect",
     EMAIL_LIST: "list",
@@ -920,9 +967,9 @@ function normalizeEmailArgs(
     EMAIL_DRAFT: "draft_reply",
   };
   return {
-    action: actionMap[intent] ?? args.action,
+    action: actionMap[intent] ?? (args.action as string | null),
     ...args,
-  };
+  } as Record<string, string | number | boolean | null>;
 }
 
 function parseTimeRequest(text: string): boolean {

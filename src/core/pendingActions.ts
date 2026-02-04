@@ -5,12 +5,16 @@ export type PendingAction =
   | {
       type: "RUN_SKILL";
       intent: string;
-      args: Record<string, unknown>;
+      args: Record<string, string | number | boolean | null>;
+      createdAt: string;
+    }
+  | {
+      type: "RUN_UPDATE";
       createdAt: string;
     }
   | {
       type: "RUN_PLAN";
-      plan: Array<{ skill: string; args: Record<string, unknown> }>;
+      plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }>;
       createdAt: string;
     };
 
