@@ -50,7 +50,7 @@ import { applyFeedback, formatReply, getBehaviorProfile, setBehaviorProfile, tou
 import { recordInteraction, getInteractionState, markCheckinSent } from "../core/interaction";
 import { updatePreferencesFromMessage } from "../core/preferences";
 import { ensurePairingCode, getOwnerState, setOwner, updateOwnerDetails } from "../core/owner";
-import { CAPABILITIES } from "../config/capabilities";
+import { CAPABILITIES, HELP_SECTIONS } from "../config/capabilities";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -83,7 +83,9 @@ function isPostSetupHelpRequest(text: string): boolean {
     normalized.includes("o que vc faz") ||
     normalized.includes("como usar") ||
     normalized.includes("me mostra") ||
-    normalized.includes("me mostra os comandos")
+    normalized.includes("me mostra os comandos") ||
+    normalized.includes("ajuda") ||
+    normalized.includes("help")
   );
 }
 
@@ -103,6 +105,36 @@ function buildPostSetupHelp(): string {
     return [`${category.title}:`, ...examples].join("\n");
   });
   return buckets.join("\n");
+}
+
+function buildHelpMessage(topic: string): string {
+  const normalized = topic.toLowerCase();
+  const section =
+    HELP_SECTIONS.find((item) => normalized.includes(item.key)) ??
+    HELP_SECTIONS.find((item) => item.key === "geral");
+  if (!section) return "Posso explicar o que eu faço. Quer ajuda com email, lembretes ou update?";
+  const lines = [
+    section.title,
+    section.description,
+    "",
+    ...section.steps.map((step) => `- ${step}`),
+    "",
+    "Exemplos:",
+    ...section.examples.map((example) => `- ${example}`),
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+function detectHelpTopic(text: string): string {
+  const normalized = text.toLowerCase();
+  if (normalized.includes("icloud")) return "icloud";
+  if (normalized.includes("gmail")) return "email";
+  if (normalized.includes("email") || normalized.includes("e-mail")) return "email";
+  if (normalized.includes("lembrete") || normalized.includes("cron")) return "lembretes";
+  if (normalized.includes("update") || normalized.includes("atualiza")) return "update";
+  if (normalized.includes("ajuda") || normalized.includes("help")) return "geral";
+  if (normalized.includes("configura")) return "geral";
+  return "geral";
 }
 
 function parseLocation(value: string): { city: string; country?: string } {
@@ -372,6 +404,12 @@ export async function initWhatsApp(): Promise<WASocket> {
       const decision = parseConfirmation(text);
       if (pending && decision) {
         await handlePendingDecision(socket, from, threadId, pending, decision);
+        continue;
+      }
+      if (isPostSetupHelpRequest(text) || text.toLowerCase().includes("configurar")) {
+        const topic = detectHelpTopic(text);
+        const help = buildHelpMessage(topic);
+        await sendAndLog(socket, from, threadId, help);
         continue;
       }
       if (owner?.setup_done && isPostSetupHelpRequest(text)) {
