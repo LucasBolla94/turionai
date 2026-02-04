@@ -2,6 +2,7 @@ import { Skill, SkillContext, SkillResult } from "./types";
 import { buildEmailConfig, loadEmailConfig, saveEmailConfig } from "../core/emailStore";
 import { listEmails, readEmail, sendEmail, deleteEmail, type EmailSummary } from "../core/emailClient";
 import { getTimezone } from "../core/timezone";
+import { getEmailRules, matchRule } from "../core/emailRules";
 import { draftEmailReply, explainEmail } from "../core/brain";
 
 export class EmailSkill implements Skill {
@@ -42,20 +43,23 @@ export class EmailSkill implements Skill {
       const unreadOnly =
         typeof args.unreadOnly === "boolean" ? args.unreadOnly : true;
       const mode = typeof args.mode === "string" ? args.mode : "summary";
+      const suggestCleanup =
+        typeof args.suggestCleanup === "boolean" ? args.suggestCleanup : true;
       const result = await listEmails(config, { limit, unreadOnly });
       if (result.items.length === 0) {
         return { ok: true, output: "Nenhum email encontrado." };
       }
       const total = result.totalUnread;
       const timeZone = await getTimezone();
+      const rules = await getEmailRules();
       const important = result.items.filter(
-        (mail) => computeEmailPriority(mail).importance === "alta",
+        (mail) => computeEmailPriority(mail, rules).importance === "alta",
       );
 
       if (mode === "compact") {
         const items = result.items.slice(0, 4);
         const lines = items.map((mail, index) =>
-          formatEmailCompact(mail, index + 1, timeZone),
+          formatEmailCompact(mail, index + 1, timeZone, rules),
         );
         const more =
           unreadOnly && total > items.length
@@ -108,9 +112,36 @@ export class EmailSkill implements Skill {
         "4️⃣ Mostre mais e-mails",
       ].join("\n");
 
+      const cleanupCandidates = suggestCleanup
+        ? result.items
+            .filter((mail) => {
+              const priority = computeEmailPriority(mail, rules);
+              const category = classifyEmailCategory(mail);
+              return (
+                priority.importance === "baixa" &&
+                (category === "newsletter/promoções" || category === "marketing")
+              );
+            })
+            .slice(0, 3)
+        : [];
+
+      const cleanupText = cleanupCandidates.length
+        ? [
+            "",
+            `Acho que ${cleanupCandidates.length} e-mail(s) parecem promoções:`,
+            ...cleanupCandidates.map(
+              (mail) => `• ${simplifySender(mail.from)} — ${shortSubject(mail.subject)}`,
+            ),
+            "Posso apagar esses?",
+            `[[CLEANUP:${cleanupCandidates
+              .map((mail) => `${mail.id}|${simplifySender(mail.from)}`)
+              .join(";")}]]`,
+          ].join("\n")
+        : "";
+
       return {
         ok: true,
-        output: [insight, more, "", footer].filter(Boolean).join("\n"),
+        output: [insight, more, "", footer, cleanupText].filter(Boolean).join("\n"),
       };
     }
 
@@ -192,11 +223,31 @@ export class EmailSkill implements Skill {
   }
 }
 
-function computeEmailPriority(mail: EmailSummary): { urgency: string; importance: string } {
+function computeEmailPriority(
+  mail: EmailSummary,
+  rules: Awaited<ReturnType<typeof getEmailRules>>,
+): { urgency: "alta" | "normal" | "baixa"; importance: "alta" | "normal" | "baixa" } {
   const from = `${mail.from}`.toLowerCase();
   const subject = `${mail.subject}`.toLowerCase();
   const urgentKeywords = ["urgent", "urgente", "asap", "imediato", "today", "hoje"];
   const importantFrom = ["@apple.com", "icloud.com", "bank", "paypal", "gov", "hmrc", "linkedin", "indeed"];
+  const matched = matchRule(rules, from, subject);
+  if (matched) {
+    return {
+      urgency:
+        matched.urgency === "media"
+          ? "normal"
+          : matched.urgency === "baixa"
+            ? "baixa"
+            : "alta",
+      importance:
+        matched.importance === "media"
+          ? "normal"
+          : matched.importance === "baixa"
+            ? "baixa"
+            : "alta",
+    };
+  }
   const isUrgent = urgentKeywords.some((k) => subject.includes(k));
   const isImportant = importantFrom.some((k) => from.includes(k));
   return {
@@ -205,8 +256,13 @@ function computeEmailPriority(mail: EmailSummary): { urgency: string; importance
   };
 }
 
-function formatEmailCompact(mail: EmailSummary, index: number, timeZone: string): string {
-  const priority = computeEmailPriority(mail);
+function formatEmailCompact(
+  mail: EmailSummary,
+  index: number,
+  timeZone: string,
+  rules: Awaited<ReturnType<typeof getEmailRules>>,
+): string {
+  const priority = computeEmailPriority(mail, rules);
   const badge = priority.importance === "alta" ? " ⚠️" : "";
   const time = formatTime(mail.date, timeZone);
   return `${index}️⃣ ${simplifySender(mail.from)} — ${shortSubject(mail.subject)} (${time})${badge}`;

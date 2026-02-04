@@ -38,6 +38,7 @@ import { EmailSkill } from "../skills/emailSkill";
 import { clearPending, getPending, setPending } from "../core/pendingActions";
 import { loadEmailConfig } from "../core/emailStore";
 import { consumeUpdatePending, markUpdatePending } from "../core/updateStatus";
+import { addEmailRule, extractEmailDomain } from "../core/emailRules";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -499,7 +500,15 @@ async function handleCommand(
     }
     const payload = parseEmailCommandArgs(action, args.slice(1));
     const result = await emailSkill.execute(payload, { platform: process.platform });
-    await sendAndLog(socket, to, threadId, result.output);
+    const cleanup = extractCleanupSuggestion(result.output);
+    if (cleanup) {
+      await setPending(threadId, {
+        type: "EMAIL_DELETE_SUGGEST",
+        items: cleanup.items,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    await sendAndLog(socket, to, threadId, cleanup ? cleanup.text : result.output);
     return;
   }
 
@@ -968,7 +977,15 @@ async function handleBrain(
         return;
       }
       const outcome = await skill.execute(result.args ?? {}, { platform: process.platform });
-      await sendAndLog(socket, to, threadId, outcome.output);
+      const cleanup = extractCleanupSuggestion(outcome.output);
+      if (cleanup) {
+        await setPending(threadId, {
+          type: "EMAIL_DELETE_SUGGEST",
+          items: cleanup.items,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      await sendAndLog(socket, to, threadId, cleanup ? cleanup.text : outcome.output);
       return;
     }
 
@@ -1196,6 +1213,23 @@ function parseEmailCommandArgs(action: string, rest: string[]): Record<string, u
   return { action };
 }
 
+function extractCleanupSuggestion(
+  output: string,
+): { text: string; items: Array<{ id: number; sender: string }> } | null {
+  const marker = output.match(/\[\[CLEANUP:([^\]]+)\]\]/);
+  if (!marker) return null;
+  const items: Array<{ id: number; sender: string }> = [];
+  const payload = marker[1];
+  for (const part of payload.split(";")) {
+    const [idRaw, senderRaw] = part.split("|");
+    const id = Number(idRaw);
+    if (!id || !senderRaw) continue;
+    items.push({ id, sender: senderRaw.trim() });
+  }
+  const text = output.replace(marker[0], "").trim();
+  return items.length ? { text, items } : null;
+}
+
 function parseConfirmation(text: string): "confirm" | "cancel" | null {
   const normalized = text.trim().toLowerCase();
   const confirm = new Set(["confirmar", "sim", "ok", "confirmo"]);
@@ -1209,7 +1243,7 @@ async function handlePendingDecision(
   socket: WASocket,
   to: string,
   threadId: string,
-  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "EMAIL_CONNECT_FLOW"; provider: "gmail" | "icloud"; stage: "await_email" | "await_password"; email?: string } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
+  pending: { type: "RUN_SKILL"; intent: string; args: Record<string, string | number | boolean | null> } | { type: "RUN_UPDATE" } | { type: "EMAIL_CONNECT_FLOW"; provider: "gmail" | "icloud"; stage: "await_email" | "await_password"; email?: string } | { type: "EMAIL_DELETE_SUGGEST"; items: Array<{ id: number; sender: string }> } | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
   decision: "confirm" | "cancel",
 ): Promise<void> {
   if (decision === "cancel") {
@@ -1227,6 +1261,34 @@ async function handlePendingDecision(
       const message = error instanceof Error ? error.message : "Falha na atualiza??o.";
       await sendAndLog(socket, to, threadId, `Erro: ${message}`);
     }
+    return;
+  }
+  if (pending.type === "EMAIL_DELETE_SUGGEST") {
+    const emailSkill = new EmailSkill();
+    for (const item of pending.items) {
+      try {
+        await emailSkill.execute({ action: "delete", id: item.id }, { platform: process.platform });
+        const domain = extractEmailDomain(item.sender);
+        if (domain) {
+          await addEmailRule({
+            type: "domain",
+            value: domain,
+            importance: "baixa",
+            urgency: "baixa",
+            action: "ignore",
+          });
+        }
+      } catch {
+        // ignore individual failures
+      }
+    }
+    await clearPending(threadId);
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "Feito. Apaguei esses emails e vou priorizar melhor a partir de agora.",
+    );
     return;
   }
   if (pending.type === "RUN_PLAN") {
