@@ -19,7 +19,7 @@ import {
   removeCronJob,
 } from "../core/cronManager";
 import os from "node:os";
-import { interpretWithXai } from "../core/brain";
+import { chatWithXai } from "../core/brain";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -259,17 +259,11 @@ async function handleCommand(
 
 async function handleBrain(socket: WASocket, to: string, text: string): Promise<void> {
   try {
-    const result = await interpretWithXai(text);
-    if (!result) {
-      await socket.sendMessage(to, { text: "IA não configurada." });
+    const response = await chatWithXai(text);
+    if (!response) {
+      await socket.sendMessage(to, { text: "Sem resposta da IA." });
       return;
     }
-    const response = [
-      `Intent: ${result.intent}`,
-      `Args: ${JSON.stringify(result.args)}`,
-      result.missing.length ? `Missing: ${result.missing.join(", ")}` : "Missing: none",
-      `Needs confirmation: ${result.needs_confirmation}`,
-    ].join("\n");
     await socket.sendMessage(to, { text: response });
   } catch (error) {
     const message =

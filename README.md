@@ -106,8 +106,4 @@ Configurar a chave via variável de ambiente (não comite a chave):
 XAI_API_KEY="SUA_CHAVE" TURION_XAI_MODEL="grok-4" npm run dev
 ```
 
-O Turion responde com:
-- Intent
-- Args
-- Missing
-- Needs confirmation
+O Turion responde com texto direto da IA (ex: saudação ou orientação).
