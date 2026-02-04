@@ -9,6 +9,7 @@ import { Boom } from "@hapi/boom";
 import qrcode from "qrcode";
 import pino from "pino";
 import { resolve } from "node:path";
+import { rm } from "node:fs/promises";
 import { isAuthorized } from "../config/allowlist";
 import { classifyMessage } from "../core/messagePipeline";
 import { listScripts, runScript } from "../executor/executor";
@@ -63,6 +64,14 @@ function alreadySeen(id: string): boolean {
   const ts = seenMessages.get(id);
   if (!ts) return false;
   return Date.now() - ts <= SEEN_TTL_MS;
+}
+
+async function resetAuthState(): Promise<void> {
+  try {
+    await rm(authDir, { recursive: true, force: true });
+  } catch {
+    return;
+  }
 }
 
 export async function initWhatsApp(): Promise<WASocket> {
