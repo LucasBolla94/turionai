@@ -35,7 +35,12 @@ install_compose_plugin() {
   if [ -f /etc/debian_version ]; then
     echo "[Tur] Instalando docker compose plugin..."
     sudo apt-get update
-    sudo apt-get install -y docker-compose-plugin
+    sudo apt-get install -y docker-compose-plugin || true
+    if docker compose version >/dev/null 2>&1; then
+      return 0
+    fi
+    echo "[Tur] Tentando docker-compose (legacy)..."
+    sudo apt-get install -y docker-compose
     return 0
   fi
   echo "[Tur] Docker Compose plugin não encontrado."
@@ -78,7 +83,7 @@ EOF
 fi
 
 echo "[Tur] Subindo container..."
-docker compose up -d
+sudo docker compose up -d
 
 echo "[Tur] Pronto. Logs:"
-echo "docker compose logs -f"
+echo "sudo docker compose logs -f"
