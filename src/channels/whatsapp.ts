@@ -157,6 +157,19 @@ function parseLocation(value: string): { city: string; country?: string } {
   return { city: cleaned };
 }
 
+function extractQuotedText(message: any): string | null {
+  const quoted =
+    message?.message?.extendedTextMessage?.contextInfo?.quotedMessage ??
+    message?.message?.contextInfo?.quotedMessage;
+  if (!quoted) return null;
+  return (
+    quoted.conversation ??
+    quoted.extendedTextMessage?.text ??
+    quoted.imageMessage?.caption ??
+    null
+  );
+}
+
 function buildOnboardingSummary(owner: Awaited<ReturnType<typeof getOwnerState>>): string {
   if (!owner) return "Fechou. Ainda preciso de alguns detalhes.";
   const name = owner.owner_name ?? "voce";
@@ -331,7 +344,7 @@ export async function initWhatsApp(): Promise<WASocket> {
       if (!text.trim()) {
         continue;
       }
-      const pending = await getPending(threadId);
+      let pending = await getPending(threadId);
       const sanitizedText = sanitizeConversationText(text, pending);
       if (!authorized) {
         console.warn(`[Turion] msg bloqueada`, { sender, from });
@@ -339,6 +352,18 @@ export async function initWhatsApp(): Promise<WASocket> {
       }
       if (owner?.setup_done && pending?.type === "OWNER_SETUP") {
         await clearPending(threadId);
+        pending = null;
+      }
+      if (!pending) {
+        const quoted = extractQuotedText(message);
+        if (quoted && owner?.paired_at && !owner?.setup_done) {
+          const quotedLower = quoted.toLowerCase();
+          if (quotedLower.includes("acertei")) {
+            pending = { type: "OWNER_SETUP", stage: "confirm_summary", createdAt: new Date().toISOString() };
+          } else if (quotedLower.includes("horario")) {
+            pending = { type: "OWNER_SETUP", stage: "ask_timezone", createdAt: new Date().toISOString() };
+          }
+        }
       }
       if (pending && pending.type === "OWNER_SETUP") {
         if (!ownerJid) {
@@ -1720,8 +1745,8 @@ function extractCleanupSuggestion(
 
 function parseConfirmation(text: string): "confirm" | "cancel" | null {
   const normalized = text.trim().toLowerCase();
-  const confirm = new Set(["confirmar", "sim", "ok", "confirmo"]);
-  const cancel = new Set(["cancelar", "nao", "não", "cancela"]);
+  const confirm = new Set(["confirmar", "sim", "ok", "confirmo", "isso", "isso mesmo", "acertou", "certo", "exato", "correto", "pode"]);
+  const cancel = new Set(["cancelar", "nao", "não", "cancela", "errado"]);
   if (confirm.has(normalized)) return "confirm";
   if (cancel.has(normalized)) return "cancel";
   return null;
@@ -2318,7 +2343,12 @@ async function handleOwnerSetup(
 
   if (pending.stage === "ask_timezone") {
     const ai = await interpretOnboardingAnswer("timezone", value).catch(() => null);
-    const tz = ai?.timezone ?? normalizeTimezoneInput(value) ?? value;
+    const confirmation = parseConfirmation(value);
+    const inferred =
+      owner?.timezone ??
+      inferTimezoneFromLocation(owner?.city, owner?.country) ??
+      normalizeTimezoneInput(value);
+    const tz = confirmation === "confirm" && inferred ? inferred : ai?.timezone ?? normalizeTimezoneInput(value) ?? value;
     try {
       await setTimezone(tz);
       await updateOwnerDetails({ timezone: tz });
@@ -2376,6 +2406,19 @@ async function handleOwnerSetup(
   }
 
   if (pending.stage === "confirm_summary") {
+    if (isPostSetupHelpRequest(value)) {
+      await updateOwnerDetails({ setup_done: true });
+      await clearPending(threadId);
+      const freshOwner = await getOwnerState();
+      const name = freshOwner?.owner_name ?? "por aqui";
+      const message = [
+        "Boa, te explico rapidinho.",
+        buildPostSetupHelp(),
+        "Se quiser, posso configurar algo agora.",
+      ].join("\n");
+      await sendAndLog(socket, to, threadId, message);
+      return true;
+    }
     const decision = parseConfirmation(value);
     if (decision === "confirm") {
       await updateOwnerDetails({ setup_done: true });
@@ -2392,17 +2435,26 @@ async function handleOwnerSetup(
     else if (lower.includes("idioma")) nextStage = "ask_language";
     else if (lower.includes("tom") || lower.includes("jeito")) nextStage = "ask_style";
     else if (lower.includes("objetivo")) nextStage = "ask_goal";
-    await setPending(threadId, {
-      type: "OWNER_SETUP",
-      stage: nextStage,
-      createdAt: new Date().toISOString(),
-    });
-    await sendAndLog(
-      socket,
-      to,
-      threadId,
-      "Beleza. Me diz o que voce quer ajustar primeiro.",
-    );
+    if (lower.includes("corrigir") || lower.includes("ajustar")) {
+      await setPending(threadId, {
+        type: "OWNER_SETUP",
+        stage: nextStage,
+        createdAt: new Date().toISOString(),
+      });
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Beleza. Me diz o que voce quer ajustar primeiro.",
+      );
+    } else {
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Se quiser ajustar algo, me diz: nome, cidade, idioma, tom ou objetivo.",
+      );
+    }
     return true;
   }
 
@@ -2543,3 +2595,4 @@ async function executeUpdate(
     await sendAndLog(socket, to, threadId, `${summary} Reiniciando... Ja volto.`);
   setTimeout(() => process.exit(0), 1000);
 }
+
