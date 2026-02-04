@@ -19,15 +19,33 @@ export interface OwnerState {
   goal?: string;
 }
 
-const OWNER_DIR = resolve("state", "memory");
+const OWNER_DIR = resolve("state", "persona");
 const OWNER_PATH = resolve(OWNER_DIR, "owner.json");
+const LEGACY_OWNER_DIR = resolve("state", "memory");
+const LEGACY_OWNER_PATH = resolve(LEGACY_OWNER_DIR, "owner.json");
+const FALLBACK_OWNER_DIR = resolve("state");
+const FALLBACK_OWNER_PATH = resolve(FALLBACK_OWNER_DIR, "owner.json");
 
 async function loadOwnerState(): Promise<OwnerState | null> {
   try {
     const data = await readFile(OWNER_PATH, "utf8");
     return JSON.parse(data) as OwnerState;
   } catch {
-    return null;
+    try {
+      const legacy = await readFile(LEGACY_OWNER_PATH, "utf8");
+      const parsed = JSON.parse(legacy) as OwnerState;
+      await saveOwnerState(parsed);
+      return parsed;
+    } catch {
+      try {
+        const fallback = await readFile(FALLBACK_OWNER_PATH, "utf8");
+        const parsed = JSON.parse(fallback) as OwnerState;
+        await saveOwnerState(parsed);
+        return parsed;
+      } catch {
+        return null;
+      }
+    }
   }
 }
 
@@ -38,6 +56,18 @@ export async function getOwnerState(): Promise<OwnerState | null> {
 export async function saveOwnerState(state: OwnerState): Promise<void> {
   await mkdir(OWNER_DIR, { recursive: true });
   await writeFile(OWNER_PATH, JSON.stringify(state, null, 2), "utf8");
+  try {
+    await mkdir(LEGACY_OWNER_DIR, { recursive: true });
+    await writeFile(LEGACY_OWNER_PATH, JSON.stringify(state, null, 2), "utf8");
+  } catch {
+    // ignore legacy write failures
+  }
+  try {
+    await mkdir(FALLBACK_OWNER_DIR, { recursive: true });
+    await writeFile(FALLBACK_OWNER_PATH, JSON.stringify(state, null, 2), "utf8");
+  } catch {
+    // ignore fallback write failures
+  }
 }
 
 export async function ensurePairingCode(): Promise<string> {

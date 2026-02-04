@@ -188,6 +188,9 @@ fi
 step "Subindo container"
 run_compose down >/dev/null 2>&1 || true
 rm -rf "$APP_DIR/state/baileys" >/dev/null 2>&1 || true
+step "Ajustando permissao da pasta state"
+sudo chown -R 1000:1000 "$APP_DIR/state" >/dev/null 2>&1 || true
+sudo chmod -R u+rwX "$APP_DIR/state" >/dev/null 2>&1 || true
 if ! run_compose up -d --force-recreate >/dev/null 2>&1; then
   echo "[Tur] Falha ao subir container. Reexecutando com logs..."
   run_compose up -d --force-recreate

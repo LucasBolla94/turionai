@@ -330,8 +330,12 @@ export async function initWhatsApp(): Promise<WASocket> {
       const from = message.key.remoteJid ?? "unknown";
       const threadId = from.replace(/[^\w]/g, "_");
       const sender = message.key.participant ?? message.key.remoteJid ?? "unknown";
-      const owner = await getOwnerState();
-      const ownerJid = owner?.owner_jid;
+      let owner = await getOwnerState();
+      let ownerJid = owner?.owner_jid;
+      if (!ownerJid && owner?.setup_done) {
+        owner = await setOwner(sender);
+        ownerJid = owner?.owner_jid;
+      }
       const authorized =
         !ownerJid ||
         sameOwner(ownerJid, sender) ||
@@ -2436,6 +2440,9 @@ async function handleOwnerSetup(
     }
     const decision = parseConfirmation(value);
     if (decision === "confirm") {
+      if (!owner?.owner_jid) {
+        await setOwner(to);
+      }
       await updateOwnerDetails({ setup_done: true });
       await clearPending(threadId);
       const freshOwner = await getOwnerState();
