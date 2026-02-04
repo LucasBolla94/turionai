@@ -184,9 +184,11 @@ EOF
 fi
 
 step "Subindo container"
-if ! run_compose up -d >/dev/null 2>&1; then
+run_compose down >/dev/null 2>&1 || true
+rm -rf "$APP_DIR/state/baileys" >/dev/null 2>&1 || true
+if ! run_compose up -d --force-recreate >/dev/null 2>&1; then
   echo "[Tur] Falha ao subir container. Reexecutando com logs..."
-  run_compose up -d
+  run_compose up -d --force-recreate
 fi
 
 step "Pronto. Abrindo logs para QR Code (Ctrl+C para sair)"
