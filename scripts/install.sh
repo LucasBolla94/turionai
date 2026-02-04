@@ -63,9 +63,25 @@ install_compose_plugin() {
   if docker compose version >/dev/null 2>&1; then
     return 0
   fi
+  if docker-compose version >/dev/null 2>&1; then
+    return 0
+  fi
 
   echo "[Tur] Docker Compose não pôde ser instalado automaticamente."
   echo "Instale manualmente para sua distro."
+  exit 1
+}
+
+run_compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+    return
+  fi
+  if docker-compose version >/dev/null 2>&1; then
+    docker-compose "$@"
+    return
+  fi
+  echo "[Tur] Docker Compose não disponível."
   exit 1
 }
 
@@ -104,7 +120,7 @@ EOF
 fi
 
 echo "[Tur] Subindo container..."
-sudo docker compose up -d
+run_compose up -d
 
 echo "[Tur] Pronto. Logs:"
-echo "sudo docker compose logs -f"
+echo "docker compose logs -f  (ou docker-compose logs -f)"
