@@ -64,11 +64,14 @@ export async function initWhatsApp(): Promise<WASocket> {
     for (const message of event.messages) {
       const from = message.key.remoteJid ?? "unknown";
       const sender = message.key.participant ?? message.key.remoteJid ?? "unknown";
-      const authorized = isAuthorized(sender);
+      const authorized = isAuthorized(sender) || isAuthorized(from);
       const text =
         message.message?.conversation ??
         message.message?.extendedTextMessage?.text ??
         "";
+      if (!text.trim()) {
+        continue;
+      }
       if (!authorized) {
         console.warn(`[Turion] msg bloqueada de ${sender}`);
         continue;

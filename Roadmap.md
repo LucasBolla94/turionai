@@ -186,165 +186,66 @@ Criar a base que executa comandos **sem risco**.
 
 ---
 
-## FASE 6 — Primeiros comandos reais (botões) ✅
+# Roadmap – Projeto Turion (FASE 6 → FASE 12 com IA)
+
+> Contexto:
+> Até a FASE 5 o Turion já:
+> - recebe mensagens
+> - filtra segurança
+> - entende intenções básicas
+> - executa scripts seguros
+>
+> A partir daqui, a IA entra para:
+> - interpretar melhor comandos
+> - melhorar respostas
+> - planejar ações
+> - ajudar em diagnósticos
+> - gerar código e ajustes (sempre sob controle)
+
+---
+
+## FASE 6 — Comandos reais + UX inicial (sem IA ainda)
 
 ### Objetivo
-Ter comandos úteis, simples e seguros.
+Consolidar comandos úteis e padronizar respostas.
 
-### Comandos iniciais
-- `status` → mostra uptime, container, memória
-- `list scripts` → lista botões disponíveis
-- `run <script>` → executa script permitido
+### Comandos obrigatórios
+- `status`
+- `help`
+- `list scripts`
+- `run <script>`
 
-### Testes
-- Rodar cada comando
-- Ver resposta clara no WhatsApp
+### Melhorias
+- Respostas formatadas
+- Mensagens claras e consistentes
+- Erros sempre explicativos
 
 ### Resultado esperado
-✅ Turion já “trabalha” de verdade
+✅ Turion já é útil  
+✅ Base sólida para IA entrar depois
 
 ---
 
-## FASE 7 — CRON Jobs (tarefas automáticas)
+## FASE 7 — IA como INTERPRETADOR (Brain v1)
 
 ### Objetivo
-Permitir tarefas agendadas.
+Usar IA para **entender linguagem natural**, não para executar.
 
-### Passos
-1. Escolher abordagem inicial:
-- `node-cron` (interno)
-2. Criar `CronManager`
-3. Criar comandos:
-- criar cron
-- listar crons
-- pausar cron
-- remover cron
-4. Persistir crons (arquivo ou DB)
+### O que a IA faz
+- Converter texto livre em intenção estruturada
+- Extrair argumentos
+- Identificar ambiguidades
+- Fazer perguntas quando necessário
 
-### Testes
-- Criar cron de teste (log a cada 1 min)
-- Ver execução real
-- Pausar e remover
+### Exemplos
+Usuário:
+> “faz o deploy do projeto x”
 
-### Resultado esperado
-✅ Turion executa tarefas sozinho no tempo certo
-
----
-
-## FASE 8 — Deploy simples de projetos (MVP)
-
-### Objetivo
-Primeiro deploy REAL, sem complexidade.
-
-### Escopo inicial
-- Apenas Docker Compose
-- Projetos locais ou GitHub público
-
-### Passos
-1. Script `deploy_compose.sh`
-2. Clonar repo
-3. Rodar `docker compose up -d`
-4. Ver status do container
-5. Retornar resultado no WhatsApp
-
-### Testes
-- Deploy de projeto simples
-- Atualizar e redeploy
-- Ver logs
-
-### Resultado esperado
-✅ Turion faz deploy de verdade
-
----
-
-## FASE 9 — Logs e diagnóstico básico
-
-### Objetivo
-Ajudar a entender erros.
-
-### Passos
-1. Criar comando `logs <projeto>`
-2. Buscar logs Docker / PM2
-3. Limitar tamanho de retorno
-4. Mostrar erro claro
-
-### Testes
-- Quebrar projeto de propósito
-- Ver erro pelo WhatsApp
-
-### Resultado esperado
-✅ Turion ajuda a debugar
-
----
-
-## FASE 10 — Estrutura de Skills (organização)
-
-### Objetivo
-Preparar o projeto para crescer sem virar caos.
-
-### Passos
-1. Cada funcionalidade vira uma Skill:
-- DeploySkill
-- CronSkill
-- LogsSkill
-2. Interface padrão:
-- canHandle()
-- execute()
-3. Registro automático de skills
-
-### Resultado esperado
-✅ Código organizado e escalável
-
----
-
-## FASE 11 — Auditoria e histórico
-
-### Objetivo
-Saber tudo o que aconteceu.
-
-### Passos
-1. Criar AuditLog
-2. Registrar:
-- quem pediu
-- o que foi feito
-- quando
-- resultado
-3. Persistir (DB ou arquivo)
-
-### Resultado esperado
-✅ Histórico completo e confiável
-
----
-
-## FASE 12 — Refinamento (SÓ AGORA)
-
-### Exemplos de melhorias
-- Botões interativos
-- Confirmações (“tem certeza?”)
-- IA para sugerir soluções
-- Domínios + SSL
-- Child agents
-- Dashboard web
-- Instalador `.sh`
-
----
-
-## PRINCÍPIO FINAL
-
-> **Nada novo entra sem passar por:**
-> funcionar → ser testado → ser seguro → ser auditável
-
-Este roadmap permite:
-- parar em qualquer fase
-- testar em produção real
-- adaptar para múltiplos servidores
-- crescer sem refatoração pesada
-
----
-
-## Espaço reservado para adaptações futuras
-- [ ] Multi-usuário
-- [ ] Multi-servidor
-- [ ] Multi-canal (Telegram, Slack)
-- [ ] Plugin system
-- [ ] Marketplace de skills
+IA responde internamente:
+```json
+{
+  "intent": "DEPLOY",
+  "args": { "project": "x" },
+  "missing": ["repo_url"],
+  "needs_confirmation": true
+}
