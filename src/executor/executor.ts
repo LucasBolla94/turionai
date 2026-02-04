@@ -42,7 +42,7 @@ export async function listScripts(): Promise<string[]> {
   return scripts.sort();
 }
 
-export async function runScript(scriptName: string): Promise<string> {
+export async function runScript(scriptName: string, args: string[] = []): Promise<string> {
   const dir = getScriptsDir();
   const safeName = basename(scriptName);
   const scriptPath = resolve(dir, safeName);
@@ -53,9 +53,13 @@ export async function runScript(scriptName: string): Promise<string> {
   }
 
   const runner = getRunnerForExtension(ext);
-  const { stdout, stderr } = await execFileAsync(runner[0], [...runner.slice(1), scriptPath], {
+  const { stdout, stderr } = await execFileAsync(
+    runner[0],
+    [...runner.slice(1), scriptPath, ...args],
+    {
     timeout: 30_000,
-  });
+    },
+  );
 
   return [stdout, stderr].filter(Boolean).join("\n");
 }

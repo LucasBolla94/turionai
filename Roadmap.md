@@ -313,7 +313,7 @@ Resultado esperado
 ✅ Respostas melhores sem risco
 ✅ Conversas gravadas para memória e token saver
 
-FASE 9 — Deploy simples de projetos (MVP) + “Project Registry” (economia real)
+FASE 9 — Deploy simples de projetos (MVP) + “Project Registry” (economia real) ✅
 Objetivo
 Fazer deploy real (como antes), mas agora com:
 
@@ -321,12 +321,11 @@ registro do projeto (nome/repo/stack/porta)
 
 padrão fixo de deploy
 
-menos perguntas futuras (economiza tokens e tempo)
 
 Escopo inicial
 Apenas Docker Compose
 
-Projetos locais ou GitHub público
+Projetos locais ou GitHub público - Instala e configura a biblioteca git para podermos ter acesso 
 
 Passos
 Script deploy_compose.sh (whitelist)

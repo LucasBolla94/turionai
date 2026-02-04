@@ -119,6 +119,15 @@ O Turion responde com JSON interpretado:
 - Missing
 - Needs confirmation
 
+## Fase 9 (Deploy simples + Project Registry)
+
+Comandos:
+- `deploy <name> <repo_url>`
+- `redeploy <name>`
+
+Registry:
+- `state/memory/projects.json`
+
 Ações permitidas (executadas com segurança):
 - `create_dir` (somente dentro do workspace)
 - `write_file` (somente dentro do workspace)

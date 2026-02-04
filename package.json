@@ -17,6 +17,7 @@
     "baileys": "^7.0.0-rc.9",
     "node-cron": "^4.2.1",
     "pino": "^10.3.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "simple-git": "^3.30.0"
   }
 }

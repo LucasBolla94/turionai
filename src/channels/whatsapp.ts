@@ -16,6 +16,7 @@ import { createCron, listCrons, pauseCron, removeCron } from "../core/cronManage
 import os from "node:os";
 import { interpretStrictJson } from "../core/brain";
 import { executeActions } from "../core/actionExecutor";
+import { getProject, upsertProject } from "../core/projectRegistry";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -143,6 +144,9 @@ async function handleCommand(
   const cmd = command.trim();
   if (!cmd) return;
 
+  const deployScript =
+    process.platform === "win32" ? "deploy_compose.ps1" : "deploy_compose.sh";
+
   if (cmd === "status") {
     const uptimeSec = Math.floor(process.uptime());
     const memory = process.memoryUsage();
@@ -178,6 +182,60 @@ async function handleCommand(
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao executar script.";
+      await socket.sendMessage(to, { text: `Erro: ${message}` });
+    }
+    return;
+  }
+
+  if (cmd === "deploy") {
+    const name = args[0];
+    const repo = args[1];
+    if (!name || !repo) {
+      await socket.sendMessage(to, { text: "Uso: deploy <name> <repo_url>" });
+      return;
+    }
+    try {
+      const output = await runScript(deployScript, [name, repo]);
+      await upsertProject({
+        name,
+        repo_url: repo,
+        path:
+          process.platform === "win32"
+            ? `C:\\opt\\turion\\projects\\${name}`
+            : `/opt/turion/projects/${name}`,
+        deploy: "docker-compose",
+        ports: [],
+        domains: [],
+        last_deploy_ts: new Date().toISOString(),
+      });
+      await socket.sendMessage(to, { text: output || "Deploy concluído." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha no deploy.";
+      await socket.sendMessage(to, { text: `Erro: ${message}` });
+    }
+    return;
+  }
+
+  if (cmd === "redeploy") {
+    const name = args[0];
+    if (!name) {
+      await socket.sendMessage(to, { text: "Uso: redeploy <name>" });
+      return;
+    }
+    const project = await getProject(name);
+    if (!project) {
+      await socket.sendMessage(to, { text: "Projeto não encontrado." });
+      return;
+    }
+    try {
+      const output = await runScript(deployScript, [project.name, project.repo_url]);
+      await upsertProject({
+        ...project,
+        last_deploy_ts: new Date().toISOString(),
+      });
+      await socket.sendMessage(to, { text: output || "Redeploy concluído." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha no redeploy.";
       await socket.sendMessage(to, { text: `Erro: ${message}` });
     }
     return;
