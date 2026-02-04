@@ -11,6 +11,8 @@ import pino from "pino";
 import { resolve } from "node:path";
 import { isAuthorized } from "../config/allowlist";
 import { classifyMessage } from "../core/messagePipeline";
+import { listScripts, runScript } from "../executor/executor";
+import os from "node:os";
 
 const authDir = resolve("state", "baileys");
 
@@ -79,8 +81,66 @@ export async function initWhatsApp(): Promise<WASocket> {
       });
       console.log(`[Turion] msg de ${from}: ${text}`);
       console.log(`[Turion] intent: ${result.intent}`, result);
+
+      if (result.intent === "COMMAND") {
+        handleCommand(socket, from, result.command ?? "", result.args ?? []).catch((error) => {
+          console.error("[Turion] erro ao executar comando:", error);
+        });
+      }
     }
   });
 
   return socket;
+}
+
+async function handleCommand(
+  socket: WASocket,
+  to: string,
+  command: string,
+  args: string[],
+): Promise<void> {
+  const cmd = command.trim();
+  if (!cmd) return;
+
+  if (cmd === "status") {
+    const uptimeSec = Math.floor(process.uptime());
+    const memory = process.memoryUsage();
+    const response = [
+      "Status",
+      `- uptime: ${uptimeSec}s`,
+      `- platform: ${process.platform} ${process.arch}`,
+      `- hostname: ${os.hostname()}`,
+      `- rss: ${Math.round(memory.rss / 1024 / 1024)} MB`,
+    ].join("\n");
+    await socket.sendMessage(to, { text: response });
+    return;
+  }
+
+  if (cmd === "list" && args[0] === "scripts") {
+    const scripts = await listScripts();
+    const response = scripts.length
+      ? `Scripts:\n${scripts.map((s) => `- ${s}`).join("\n")}`
+      : "Nenhum script encontrado.";
+    await socket.sendMessage(to, { text: response });
+    return;
+  }
+
+  if (cmd === "run") {
+    const scriptName = args[0];
+    if (!scriptName) {
+      await socket.sendMessage(to, { text: "Uso: run <script>" });
+      return;
+    }
+    try {
+      const output = await runScript(scriptName);
+      await socket.sendMessage(to, { text: output || "Sem saída." });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao executar script.";
+      await socket.sendMessage(to, { text: `Erro: ${message}` });
+    }
+    return;
+  }
+
+  await socket.sendMessage(to, { text: "Comando não reconhecido." });
 }

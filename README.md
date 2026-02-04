@@ -70,3 +70,10 @@ Para definir outra pasta:
 ```bash
 TURION_SCRIPTS_DIR="C:\\caminho\\para\\scripts" npm run dev
 ```
+
+## Fase 6 (Comandos reais)
+
+Comandos disponíveis no WhatsApp:
+- `status`
+- `list scripts`
+- `run <script>`

@@ -186,7 +186,7 @@ Criar a base que executa comandos **sem risco**.
 
 ---
 
-## FASE 6 — Primeiros comandos reais (botões)
+## FASE 6 — Primeiros comandos reais (botões) ✅
 
 ### Objetivo
 Ter comandos úteis, simples e seguros.
