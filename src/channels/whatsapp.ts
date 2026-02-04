@@ -600,6 +600,36 @@ async function handleBrain(
     }
 
     if (parseUpdateRequest(text)) {
+      const checkScript =
+        process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
+      let status = "";
+      try {
+        status = await runScript(checkScript);
+      } catch {
+        status = "";
+      }
+      if (status.includes("UPDATE_AVAILABLE")) {
+        await setPending(threadId, {
+          type: "RUN_UPDATE",
+          createdAt: new Date().toISOString(),
+        });
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Achei uma atualizacao nova por aqui. Quer que eu atualize agora? Responda 'confirmar' ou 'cancelar'.",
+        );
+        return;
+      }
+      if (status.includes("UP_TO_DATE")) {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          "Por aqui ta tudo em dia e funcionando certinho. Se quiser, posso checar de novo quando voce quiser.",
+        );
+        return;
+      }
       await setPending(threadId, {
         type: "RUN_UPDATE",
         createdAt: new Date().toISOString(),
@@ -608,7 +638,7 @@ async function handleBrain(
         socket,
         to,
         threadId,
-        "Posso atualizar agora usando `--update`. Confirma? Responda 'confirmar' ou 'cancelar'.",
+        "Nao consegui validar o status agora, mas posso atualizar mesmo assim. Quer que eu siga? (confirmar/cancelar)",
       );
       return;
     }
@@ -856,7 +886,8 @@ function parseUpdateRequest(text: string): boolean {
     normalized.includes("turion") ||
     normalized.includes("sistema") ||
     normalized.includes("bot") ||
-    normalized.includes("agente");
+    normalized.includes("agente") ||
+    normalized.includes("modelo");
   return hasUpdate && (hasTarget || normalized.length < 20);
 }
 
