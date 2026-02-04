@@ -36,6 +36,7 @@ import { readLatestDigest } from "../core/conversationStore";
 import { getTimezone } from "../core/timezone";
 import { EmailSkill } from "../skills/emailSkill";
 import { clearPending, getPending, setPending } from "../core/pendingActions";
+import { consumeUpdatePending, markUpdatePending } from "../core/updateStatus";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -82,6 +83,12 @@ export async function initWhatsApp(): Promise<WASocket> {
 
     if (connection === "open") {
       console.log("[Turion] WhatsApp conectado.");
+      const pendingUpdate = await consumeUpdatePending();
+      if (pendingUpdate?.to) {
+        await socket.sendMessage(pendingUpdate.to, {
+          text: "✅ Update concluído. Turion está online novamente.",
+        });
+      }
     }
 
     if (connection === "close") {
@@ -859,6 +866,7 @@ async function executeUpdate(
   threadId: string,
   updateScript: string,
 ): Promise<void> {
+  await markUpdatePending(to);
   const output = await runScript(updateScript);
   await sendAndLog(socket, to, threadId, `${output}\nReiniciando...`);
   setTimeout(() => process.exit(0), 1000);
