@@ -44,7 +44,8 @@ const CHAT_KEYWORDS = new Set([
 ]);
 
 function normalizeText(value: string): string {
-  return value.trim().toLowerCase();
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.replace(/^[–—−]+/, "--");
 }
 
 export function classifyMessage(context: MessageContext): MessageResult {

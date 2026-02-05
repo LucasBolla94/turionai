@@ -394,6 +394,11 @@ export async function initWhatsApp(): Promise<WASocket> {
           console.warn(`[Turion] msg bloqueada`, { sender, from });
           continue;
         }
+        if (parseApiStatusRequest(text)) {
+          const response = await buildApiStatusResponse();
+          await sendAndLog(socket, from, threadId, response);
+          continue;
+        }
         const awaitingApiKey = pending?.type === "OWNER_SETUP" && pending.stage === "await_api_key";
         if (!awaitingApiKey) {
           const handledKey = await handleStandaloneApiKey(socket, from, threadId, text);
@@ -656,6 +661,7 @@ async function handleCommand(
       `- hostname: ${os.hostname()}`,
       `- cpu_load: ${load.length ? load.map((v) => v.toFixed(2)).join(", ") : "n/a"}`,
       `- ram: ${Math.round(memory.rss / 1024 / 1024)} MB rss`,
+      `- assistant_weight: ${Math.round(memory.rss / 1024 / 1024)} MB`,
       diskLine,
     ].join("\n");
     await sendAndLog(socket, to, threadId, response);
@@ -1253,50 +1259,6 @@ async function handleBrain(
         return;
       }
 
-      if (parseApiStatusRequest(text)) {
-        const xai = await checkXaiHealth();
-        const supabase = await checkSupabaseHealth();
-        const email = await checkEmailHealth();
-        const lines = ["Status das APIs:"];
-        if (xai.ok) {
-          lines.push("- Grok: OK");
-        } else if (xai.message.includes("XAI_API_KEY")) {
-          lines.push("- Grok: chave nao configurada");
-        } else {
-          lines.push(`- Grok: erro (${xai.message})`);
-        }
-        if (supabase.ok) {
-          lines.push("- Supabase: OK");
-        } else {
-          lines.push(`- Supabase: erro (${supabase.message})`);
-        }
-        if (!email.configured) {
-          lines.push("- Email: nao configurado");
-        } else if (email.ok) {
-          lines.push("- Email: OK");
-        } else {
-          lines.push(`- Email: erro (${email.message})`);
-        }
-        lines.push("- WhatsApp: online");
-
-        const fixes: string[] = [];
-        if (!xai.ok && xai.message.includes("XAI_API_KEY")) {
-          fixes.push("Envie sua XAI_API_KEY para eu validar na hora.");
-        }
-        if (!supabase.ok && supabase.message.includes("nao configurado")) {
-          fixes.push("Preencha SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env.");
-        }
-        if (!email.configured) {
-          fixes.push("Se quiser email, diga: conectar email.");
-        }
-        if (fixes.length) {
-          lines.push("");
-          lines.push("Como corrigir:");
-          lines.push(...fixes.map((item) => `- ${item}`));
-        }
-
-        await sendAndLog(socket, to, threadId, lines.join("\n"));
-        return;
       }
 
       if (parseModelUpdateQuestion(text)) {
@@ -1828,6 +1790,50 @@ function parseApiStatusRequest(text: string): boolean {
     normalized.includes("respond") ||
     normalized.includes("status");
   return hasApi && hasCheck;
+}
+
+async function buildApiStatusResponse(): Promise<string> {
+  const xai = await checkXaiHealth();
+  const supabase = await checkSupabaseHealth();
+  const email = await checkEmailHealth();
+  const lines = ["Status das APIs:"];
+  if (xai.ok) {
+    lines.push("- Grok: OK");
+  } else if (xai.message.includes("XAI_API_KEY")) {
+    lines.push("- Grok: chave nao configurada");
+  } else {
+    lines.push(`- Grok: erro (${xai.message})`);
+  }
+  if (supabase.ok) {
+    lines.push("- Supabase: OK");
+  } else {
+    lines.push(`- Supabase: erro (${supabase.message})`);
+  }
+  if (!email.configured) {
+    lines.push("- Email: nao configurado");
+  } else if (email.ok) {
+    lines.push("- Email: OK");
+  } else {
+    lines.push(`- Email: erro (${email.message})`);
+  }
+  lines.push("- WhatsApp: online");
+
+  const fixes: string[] = [];
+  if (!xai.ok && xai.message.includes("XAI_API_KEY")) {
+    fixes.push("Envie sua XAI_API_KEY para eu validar na hora.");
+  }
+  if (!supabase.ok && supabase.message.includes("nao configurado")) {
+    fixes.push("Preencha SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env.");
+  }
+  if (!email.configured) {
+    fixes.push("Se quiser email, diga: conectar email.");
+  }
+  if (fixes.length) {
+    lines.push("");
+    lines.push("Como corrigir:");
+    lines.push(...fixes.map((item) => `- ${item}`));
+  }
+  return lines.join("\n");
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -3025,6 +3031,7 @@ async function executeUpdate(
     await sendAndLog(socket, to, threadId, `${summary} Reiniciando... Ja volto.`);
   setTimeout(() => process.exit(0), 1000);
 }
+
 
 
 
