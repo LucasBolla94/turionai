@@ -197,6 +197,22 @@ export async function initCronManager(): Promise<void> {
   }
 }
 
+export async function ensureUpdateCheckCronRunning(): Promise<void> {
+  let jobs = await loadState();
+  const updateCheck = ensureUpdateCheckCron(jobs);
+  if (updateCheck.changed) {
+    jobs = updateCheck.jobs;
+    await saveState(jobs);
+  }
+  const job = jobs.find((entry) => entry.jobType === "update_check");
+  if (!job || !job.enabled) return;
+  if (!tasks.has(job.name)) {
+    const task = buildTask(job);
+    tasks.set(job.name, task);
+    task.start();
+  }
+}
+
 export function registerCronHandler(
   jobType: string,
   handler: (job: CronJob) => Promise<void>,

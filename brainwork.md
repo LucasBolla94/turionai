@@ -46,7 +46,7 @@ Como funciona:
   },
   "needs_confirmation": false,
   "action": "RUN_SKILL",
-  "reply": "Fechado, vou te lembrar em 10 minutos. Quer que eu siga?"
+  "reply": "Fechado, vou te lembrar em 10 minutos..."
 }
 ```
 

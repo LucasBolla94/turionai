@@ -1,4 +1,4 @@
-import { registerCronHandler } from "./cronManager";
+import { registerCronHandler, ensureUpdateCheckCronRunning } from "./cronManager";
 import { runScript } from "../executor/executor";
 import { hasUpdatePending } from "./updateStatus";
 
@@ -19,4 +19,5 @@ export function registerAutoUpdateHandler(): void {
     await runScript(updateScript);
     setTimeout(() => process.exit(0), 1000);
   });
+  ensureUpdateCheckCronRunning().catch(() => undefined);
 }
