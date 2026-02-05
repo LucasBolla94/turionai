@@ -66,6 +66,7 @@ import { checkSupabaseHealth } from "../core/supabaseClient";
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
 const SEEN_TTL_MS = 5 * 60 * 1000;
+const typingState = new Map<string, { count: number; timer?: NodeJS.Timeout }>();
 let lastQr: string | null = null;
 let lastQrAt = 0;
 let isInitializing = false;
@@ -458,6 +459,33 @@ function alreadySeen(id: string): boolean {
   return Date.now() - ts <= SEEN_TTL_MS;
 }
 
+async function startTyping(socket: WASocket, to: string): Promise<void> {
+  const current = typingState.get(to) ?? { count: 0 };
+  current.count += 1;
+  if (!current.timer) {
+    await socket.sendPresenceUpdate("composing", to);
+    current.timer = setInterval(() => {
+      socket.sendPresenceUpdate("composing", to).catch(() => undefined);
+    }, 7000);
+  }
+  typingState.set(to, current);
+}
+
+async function stopTyping(socket: WASocket, to: string): Promise<void> {
+  const current = typingState.get(to);
+  if (!current) return;
+  current.count -= 1;
+  if (current.count <= 0) {
+    if (current.timer) {
+      clearInterval(current.timer);
+    }
+    typingState.delete(to);
+    await socket.sendPresenceUpdate("paused", to);
+    return;
+  }
+  typingState.set(to, current);
+}
+
 async function resetAuthState(): Promise<void> {
   try {
     await rm(authDir, { recursive: true, force: true });
@@ -605,15 +633,17 @@ export async function initWhatsApp(): Promise<WASocket> {
         message.message?.conversation ??
         message.message?.extendedTextMessage?.text ??
         "";
-        if (!text.trim()) {
-          continue;
-        }
+      if (!text.trim()) {
+        continue;
+      }
+      if (!authorized) {
+        console.warn(`[Turion] msg bloqueada`, { sender, from });
+        continue;
+      }
+      await startTyping(socket, from);
+      try {
         let pending = await getPending(threadId);
         const sanitizedText = sanitizeConversationText(text, pending);
-        if (!authorized) {
-          console.warn(`[Turion] msg bloqueada`, { sender, from });
-          continue;
-        }
         if (parseApiStatusRequest(text)) {
           const response = await buildApiStatusResponse();
           await sendAndLog(socket, from, threadId, response);
@@ -817,6 +847,9 @@ export async function initWhatsApp(): Promise<WASocket> {
         handleBrain(socket, from, threadId, text).catch((error) => {
           console.error("[Turion] erro no brain:", error);
         });
+      }
+      } finally {
+        await stopTyping(socket, from);
       }
     }
   });
@@ -1926,13 +1959,6 @@ async function handleBrain(
   }
 }
 
-async function sendTyping(socket: WASocket, to: string, ms = 1200): Promise<void> {
-  await socket.sendPresenceUpdate("composing", to);
-  await new Promise((r) => setTimeout(r, ms));
-  await socket.sendPresenceUpdate("paused", to);
-}
-
-
 async function sendAndLog(
   socket: WASocket,
   to: string,
@@ -1940,7 +1966,6 @@ async function sendAndLog(
   text: string,
   options: { polish?: boolean } = {},
 ): Promise<void> {
-  await sendTyping(socket, to, 1200);
   const marker = "/*__NOPOLISH__*/";
   const hasMarker = text.includes(marker);
   const cleanedText = hasMarker ? text.replace(marker, "").trim() : text.trim();
