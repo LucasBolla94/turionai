@@ -152,6 +152,19 @@ Quando o usuário pergunta sobre update do modelo (Grok), o bot explica que é um 
 Arquivo: `src/config/capabilities.ts`
 - Lista de exemplos que o Tur usa para explicar o que sabe fazer
 
+
+### 3.12 Supabase Governance
+Arquivos: src/core/supabaseClient.ts, src/core/supabaseDb.ts, src/core/supabaseGovernance.ts`r
+- Client seguro com service_role
+- SQL com guardrails (bloqueia destrutivo)
+- Storage: listar/criar buckets
+
+### 3.13 Auto-Estudo Silencioso
+Arquivos: src/core/idleDetector.ts, src/core/studyEngine.ts`r
+- Roda apenas em ociosidade (CPU/mem/atividade)
+- Limite diario de palavras
+- Registra em state/learning
+
 ## 8) Futuro (roadmap)
 - Multi-canal (Telegram, Slack)
 - Multi-servidor
@@ -185,5 +198,6 @@ Como funciona:
 - O CronSkill recebe schedule (ISO-8601 ou cron).
 - Se for ISO-8601, calcula o tempo relativo (minutos/horas/dias) para montar {tempo}.
 - Se nao for ISO, usa "no horario combinado".
+
 
 

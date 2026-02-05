@@ -292,6 +292,23 @@ export async function humanizeReply(input: {
   return content?.trim() || null;
 }
 
+export async function generateSilentStudy(input: { topic: string; seed: number }): Promise<string | null> {
+  if (!process.env.XAI_API_KEY) return null;
+  const system = [
+    "Voce eh Tur, assistente pessoal.",
+    "Gere um resumo tecnico curto e util para melhorar o Turion.",
+    "Nao invente fatos externos; seja generico e seguro.",
+    "Inclua 3 pontos praticos.",
+    "Responda em portugues e limite a 120 palavras.",
+  ].join(" ");
+  const payload = {
+    topic: input.topic,
+    seed: input.seed,
+  };
+  const content = await callXai(system, JSON.stringify(payload));
+  return content?.trim() || null;
+}
+
 export interface OnboardingAnswer {
   value: string;
   timezone?: string;

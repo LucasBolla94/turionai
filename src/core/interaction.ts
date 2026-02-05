@@ -5,13 +5,18 @@ interface InteractionState {
   lastThread?: string;
   lastJid?: string;
   lastSentDate?: string;
+  lastInteractionAt?: string;
 }
 
 const INTERACTION_DIR = resolve("state", "memory");
 const INTERACTION_PATH = resolve(INTERACTION_DIR, "interaction.json");
 
 export async function recordInteraction(threadId: string, jid: string): Promise<void> {
-  const state: InteractionState = { lastThread: threadId, lastJid: jid };
+  const state: InteractionState = {
+    lastThread: threadId,
+    lastJid: jid,
+    lastInteractionAt: new Date().toISOString(),
+  };
   await mkdir(INTERACTION_DIR, { recursive: true });
   await writeFile(INTERACTION_PATH, JSON.stringify(state, null, 2), "utf8");
 }

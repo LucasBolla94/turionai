@@ -60,6 +60,8 @@ import { recordInteraction, getInteractionState, markCheckinSent } from "../core
 import { updatePreferencesFromMessage } from "../core/preferences";
 import { ensurePairingCode, getOwnerState, setOwner, updateOwnerDetails } from "../core/owner";
 import { CAPABILITIES, HELP_SECTIONS } from "../config/capabilities";
+import { runSilentStudy } from "../core/studyEngine";
+import { checkSupabaseHealth } from "../core/supabaseClient";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -607,6 +609,10 @@ export async function initWhatsApp(): Promise<WASocket> {
       return;
     }
     await socket.sendMessage(to, { text: result.output });
+  });
+
+  registerCronHandler("silent_study_check", async () => {
+    await runSilentStudy();
   });
 
   return socket;
@@ -1249,6 +1255,7 @@ async function handleBrain(
 
       if (parseApiStatusRequest(text)) {
         const xai = await checkXaiHealth();
+        const supabase = await checkSupabaseHealth();
         const email = await checkEmailHealth();
         const lines = ["Status das APIs:"];
         if (xai.ok) {
@@ -1257,6 +1264,11 @@ async function handleBrain(
           lines.push("- Grok: chave nao configurada");
         } else {
           lines.push(`- Grok: erro (${xai.message})`);
+        }
+        if (supabase.ok) {
+          lines.push("- Supabase: OK");
+        } else {
+          lines.push(`- Supabase: erro (${supabase.message})`);
         }
         if (!email.configured) {
           lines.push("- Email: nao configurado");
@@ -1270,6 +1282,9 @@ async function handleBrain(
         const fixes: string[] = [];
         if (!xai.ok && xai.message.includes("XAI_API_KEY")) {
           fixes.push("Envie sua XAI_API_KEY para eu validar na hora.");
+        }
+        if (!supabase.ok && supabase.message.includes("nao configurado")) {
+          fixes.push("Preencha SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env.");
         }
         if (!email.configured) {
           fixes.push("Se quiser email, diga: conectar email.");

@@ -19,6 +19,8 @@ const CRON_DIR = resolve("state", "crons");
 const CRON_STATE_PATH = resolve(CRON_DIR, "crons.json");
 const UPDATE_CHECK_NAME = "update_check_5m";
 const UPDATE_CHECK_SCHEDULE = "*/5 * * * *";
+const STUDY_CHECK_NAME = "silent_study_check";
+const STUDY_CHECK_SCHEDULE = "*/30 * * * *";
 
 const tasks = new Map<string, ScheduledTask>();
 const handlers = new Map<string, (job: CronJob) => Promise<void>>();
@@ -75,6 +77,32 @@ function ensureUpdateCheckCron(jobs: CronJob[]): { jobs: CronJob[]; changed: boo
     changed = true;
   }
 
+  return { jobs: next, changed };
+}
+
+function ensureStudyCheckCron(jobs: CronJob[]): { jobs: CronJob[]; changed: boolean } {
+  const next = [...jobs];
+  const existing = next.find((job) => job.name === STUDY_CHECK_NAME);
+  if (!existing) {
+    next.push({
+      name: STUDY_CHECK_NAME,
+      schedule: STUDY_CHECK_SCHEDULE,
+      jobType: "silent_study_check",
+      payload: "",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    });
+    return { jobs: next, changed: true };
+  }
+  let changed = false;
+  if (existing.schedule !== STUDY_CHECK_SCHEDULE) {
+    existing.schedule = STUDY_CHECK_SCHEDULE;
+    changed = true;
+  }
+  if (!existing.enabled) {
+    existing.enabled = true;
+    changed = true;
+  }
   return { jobs: next, changed };
 }
 
@@ -154,6 +182,11 @@ export async function initCronManager(): Promise<void> {
   const updateCheck = ensureUpdateCheckCron(jobs);
   if (updateCheck.changed) {
     jobs = updateCheck.jobs;
+    await saveState(jobs);
+  }
+  const studyCheck = ensureStudyCheckCron(jobs);
+  if (studyCheck.changed) {
+    jobs = studyCheck.jobs;
     await saveState(jobs);
   }
   for (const job of jobs) {
