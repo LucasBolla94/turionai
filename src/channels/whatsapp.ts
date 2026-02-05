@@ -288,6 +288,19 @@ async function readLocalLogSnippet(): Promise<string> {
   return "";
 }
 
+function buildPromoListMessage(
+  items: Array<{ id: number; sender: string; subject: string }>,
+): string {
+  const lines = items.slice(0, 10).map((item) => `#${item.id} ${item.sender} — ${item.subject}`);
+  return [
+    "Esses parecem newsletters/promos:",
+    "",
+    ...lines,
+    "",
+    "Quer apagar algum? Me diga os IDs (ex: 123, 456) ou diga 'apagar todos'.",
+  ].join("\n");
+}
+
 async function attemptAutoFix(
   socket: WASocket,
   to: string,
@@ -1441,42 +1454,35 @@ async function handleBrain(
     }
 
     if (parseEmailPromoRequest(text)) {
-      const snap = await loadEmailSnapshot();
+      let snap = await loadEmailSnapshot();
       if (!snap || snap.items.length === 0) {
-        await sendAndLog(socket, to, threadId, "Ainda nao tenho uma lista recente. Quer que eu verifique seus emails agora?");
-        return;
+        const emailSkill = new EmailSkill();
+        await sendAndLog(socket, to, threadId, "Beleza, vou checar seus emails pra listar newsletters.");
+        const listResult = await emailSkill.execute(
+          { action: "list", limit: 30, unreadOnly: false, mode: "summary", suggestCleanup: false },
+          { platform: process.platform },
+        );
+        if (!listResult.ok) {
+          await sendAndLog(socket, to, threadId, "Nao consegui listar agora: " + listResult.output);
+          return;
+        }
+        snap = await loadEmailSnapshot();
       }
-      const promos = snap.items.filter((item) => item.category === "promo" || item.category === "newsletter");
-      if (promos.length === 0) {
-        await sendAndLog(socket, to, threadId, "Nao achei promos/newsletters na ultima checagem.");
-        return;
-      }
-      const lines = promos.slice(0, 4).map((item, idx) => `\u0031\u20e3${idx + 1} ${item.sender} — ${item.subject}`);
-      await sendAndLog(
-        socket,
-        to,
-        threadId,
-        [
-          "Claro 🙂",
-          "Esses aqui parecem promo/newsletter:",
-          "",
-          ...lines,
-          "",
-          "Quer que eu:",
-          "1️⃣ Abra algum pra confirmar",
-          "2️⃣ Apague todos esses",
-          "3️⃣ Ignore esse tipo no futuro",
-          "4️⃣ Não faça nada",
-        ].join("\n"),
+      const promos = (snap?.items ?? []).filter(
+        (item) => item.category === "promo" || item.category === "newsletter",
       );
+      if (promos.length === 0) {
+        await sendAndLog(socket, to, threadId, "Nao achei newsletters/promos na ultima checagem.");
+        return;
+      }
+      await sendAndLog(socket, to, threadId, buildPromoListMessage(promos));
       await setPending(threadId, {
-        type: "EMAIL_DELETE_SUGGEST",
-        items: promos.map((item) => ({ id: item.id, sender: item.sender })),
+        type: "EMAIL_DELETE_PICK",
+        items: promos.map((item) => ({ id: item.id, sender: item.sender, subject: item.subject })),
         createdAt: new Date().toISOString(),
       });
       return;
     }
-
     const provider = parseEmailProvider(text);
     if (provider) {
       await setPending(threadId, {
@@ -2263,8 +2269,18 @@ function parseEmailProvider(text: string): "icloud" | "gmail" | null {
 function parseEmailPromoRequest(text: string): boolean {
   const normalized = text.trim().toLowerCase();
   if (!normalized) return false;
-  const hasPromo = normalized.includes("promo") || normalized.includes("newsletter");
-  const hasAsk = normalized.includes("quais") || normalized.includes("mostra") || normalized.includes("ver");
+  const hasPromo =
+    normalized.includes("promo") ||
+    normalized.includes("newsletter") ||
+    normalized.includes("newsletters") ||
+    normalized.includes("boletim") ||
+    normalized.includes("marketing");
+  const hasAsk =
+    normalized.includes("quais") ||
+    normalized.includes("mostra") ||
+    normalized.includes("ver") ||
+    normalized.includes("lista") ||
+    normalized.includes("listar");
   return hasPromo && (hasAsk || normalized.length < 20);
 }
 
@@ -2840,7 +2856,7 @@ function enforceResponseStructure(reply: string): string {
   }
   const hasQuestion = lines.some((line) => line.trim().endsWith("?"));
   if (!hasQuestion) {
-    lines.push("Quer que eu siga?");
+    // Avoid auto-appending a generic question.
   }
   return lines.join("\n");
 }
