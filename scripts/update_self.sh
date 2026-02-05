@@ -5,6 +5,7 @@ set -x
 REPO_DIR="${TURION_REPO_DIR:-/app}"
 EXPECTED_URL_1="https://github.com/LucasBolla94/turionai"
 EXPECTED_URL_2="https://github.com/LucasBolla94/turionai.git"
+ENV_BACKUP="/tmp/turion_env_backup"
 
 if ! command -v git >/dev/null 2>&1; then
   if command -v apk >/dev/null 2>&1; then
@@ -19,6 +20,11 @@ cd "$REPO_DIR"
 if [ ! -d ".git" ]; then
   echo "Repositorio nao encontrado em $REPO_DIR (.git ausente)."
   exit 1
+fi
+
+if [ -f ".env" ]; then
+  cp ".env" "$ENV_BACKUP"
+  echo "Backup do .env salvo em $ENV_BACKUP"
 fi
 
 git config --global --add safe.directory "$REPO_DIR" || true
@@ -45,5 +51,17 @@ git fetch origin main
 git merge --ff-only origin/main
 
 npm install
+
+if [ -f "$ENV_BACKUP" ]; then
+  if [ ! -f ".env" ]; then
+    cp "$ENV_BACKUP" ".env"
+    echo ".env restaurado do backup."
+  else
+    if grep -q "^XAI_API_KEY=$" ".env" 2>/dev/null; then
+      cp "$ENV_BACKUP" ".env"
+      echo ".env restaurado do backup (XAI_API_KEY vazio)."
+    fi
+  fi
+fi
 
 echo "Atualizacao aplicada."
