@@ -185,12 +185,22 @@ cd "$INSTALL_DIR"
 
 if [ -d "$APP_DIR" ]; then
   step "Repositorio encontrado. Limpando para reinstalar do zero"
+  ENV_BACKUP="/tmp/turion_env_backup"
+  if [ -f "$APP_DIR/.env" ]; then
+    cp "$APP_DIR/.env" "$ENV_BACKUP"
+    echo "[Tur] Backup do .env salvo em $ENV_BACKUP"
+  fi
   sudo rm -rf "$APP_DIR"
 fi
 step "Clonando repositorio"
 git clone --quiet "$REPO_URL" "$APP_DIR"
 
 cd "$APP_DIR"
+
+if [ -f "/tmp/turion_env_backup" ]; then
+  cp "/tmp/turion_env_backup" ".env"
+  echo "[Tur] .env restaurado do backup."
+fi
 
 if [ ! -f ".env" ]; then
   step "Criando .env inicial"
@@ -199,6 +209,10 @@ XAI_API_KEY=
 TURION_XAI_MODEL=grok-4-1-fast-reasoning
 EOF
   echo "[Tur] .env criado. Edite XAI_API_KEY antes de usar a IA."
+fi
+
+if ! grep -q "^TURION_XAI_MODEL=" ".env" 2>/dev/null; then
+  echo "TURION_XAI_MODEL=grok-4-1-fast-reasoning" >> .env
 fi
 
 step "Subindo container"
