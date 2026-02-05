@@ -162,6 +162,22 @@ install_compose_plugin
 step "Iniciando servico Docker"
 start_docker_service
 
+step "Encerrando containers ativos para evitar conflito"
+if ensure_cmd docker; then
+  RUNNING_CONTAINERS="$(docker ps -q)"
+  if [ -n "$RUNNING_CONTAINERS" ]; then
+    if docker stop $RUNNING_CONTAINERS >/dev/null 2>&1; then
+      echo "[Tur] Containers ativos encerrados."
+    elif sudo docker stop $RUNNING_CONTAINERS >/dev/null 2>&1; then
+      echo "[Tur] Containers ativos encerrados (sudo)."
+    else
+      echo "[Tur] Nao consegui encerrar containers automaticamente."
+    fi
+  else
+    echo "[Tur] Nenhum container ativo."
+  fi
+fi
+
 step "Preparando diretorio de instalacao"
 sudo mkdir -p "$INSTALL_DIR"
 sudo chown -R "$USER":"$USER" "$INSTALL_DIR"
