@@ -96,6 +96,50 @@ function isLikelyAnthropicKey(value: string): boolean {
   return /^sk-ant-[A-Za-z0-9-_]{10,}$/.test(value.trim());
 }
 
+function userMentionsEmail(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized.includes("email") ||
+    normalized.includes("e-mail") ||
+    normalized.includes("inbox") ||
+    normalized.includes("caixa") ||
+    normalized.includes("não lido") ||
+    normalized.includes("nao lido") ||
+    normalized.includes("newsletter") ||
+    normalized.includes("promo")
+  );
+}
+
+function isRecentTimestamp(value?: string, minutes = 30): boolean {
+  if (!value) return false;
+  const ts = new Date(value).getTime();
+  if (!Number.isFinite(ts)) return false;
+  const deltaMs = Date.now() - ts;
+  return deltaMs >= 0 && deltaMs <= minutes * 60_000;
+}
+
+function stripEmailContent(reply: string): string {
+  const lines = reply.split(/\r?\n/);
+  const filtered = lines.filter((line) => {
+    const normalized = line.toLowerCase();
+    if (
+      normalized.includes("email") ||
+      normalized.includes("e-mail") ||
+      normalized.includes("inbox") ||
+      normalized.includes("não lido") ||
+      normalized.includes("nao lido") ||
+      normalized.includes("newsletter") ||
+      normalized.includes("promo")
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const cleaned = filtered.join("\n").trim();
+  return cleaned;
+}
+
 function parseRelativeReminder(text: string): { message: string; offsetMs: number } | null {
   const normalized = text.toLowerCase();
   if (!normalized.includes("lembre") && !normalized.includes("lembra")) {
@@ -1804,11 +1848,35 @@ async function handleBrain(
       await sendAndLog(socket, to, threadId, "IA sem resposta válida.");
       return;
     }
+    const currentPending = await getPending(threadId).catch(() => null);
+    const interaction = await getInteractionState().catch(() => null);
+    const emailContext =
+      currentPending?.type === "EMAIL_CONNECT_FLOW" ||
+      currentPending?.type === "EMAIL_DELETE_SUGGEST" ||
+      currentPending?.type === "EMAIL_DELETE_PICK" ||
+      currentPending?.type === "EMAIL_DELETE_CONFIRM" ||
+      (interaction?.lastTopic === "email_list" &&
+        isRecentTimestamp(interaction?.lastTopicAt));
+    const allowEmail = userMentionsEmail(text) || emailContext;
+
+    if (result.intent.startsWith("EMAIL_") && !allowEmail) {
+      result.intent = "CHAT";
+      result.action = "NONE";
+      result.needs_confirmation = false;
+    }
     const skipReply =
       result.action === "RUN_SKILL" && result.intent === "CRON_CREATE";
   if (result.reply && !skipReply) {
     const structured = enforceResponseStructure(result.reply);
-    await sendAndLog(socket, to, threadId, structured);
+    if (!allowEmail) {
+      const cleaned = stripEmailContent(structured);
+      const fallback = cleaned.trim()
+        ? cleaned
+        : "Tudo certo por aqui. Como posso ajudar?";
+      await sendAndLog(socket, to, threadId, fallback);
+    } else {
+      await sendAndLog(socket, to, threadId, structured);
+    }
   } else if (!result.reply && !skipReply) {
       const responseLines = [
         `Intent: ${result.intent}`,
