@@ -67,7 +67,7 @@ export class EmailSkill implements Skill {
       );
 
       if (mode === "compact") {
-        const items = result.items.slice(0, 4);
+        const items = result.items.slice(0, Math.max(1, limit));
         const lines = items.map((mail, index) =>
           formatEmailCompact(mail, index + 1, timeZone, rules),
         );
@@ -89,6 +89,17 @@ export class EmailSkill implements Skill {
             .join("\n"),
         };
       }
+
+      const listLines =
+        limit > 0 && result.items.length > 0
+          ? [
+              `Separei os ${Math.min(limit, result.items.length)} primeiros n?o lidos:`,
+              ...result.items
+                .slice(0, Math.max(1, limit))
+                .map((mail, index) => formatEmailCompact(mail, index + 1, timeZone, rules)),
+              "",
+            ]
+          : [];
 
       const importantBullets = important
         .slice(0, 2)
@@ -151,7 +162,9 @@ export class EmailSkill implements Skill {
 
       return {
         ok: true,
-        output: [insight, more, "", footer, cleanupText].filter(Boolean).join("\n"),
+        output: [listLines.join("\n"), insight, more, "", footer, cleanupText]
+          .filter(Boolean)
+          .join("\n"),
       };
     }
 
