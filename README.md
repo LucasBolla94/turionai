@@ -74,7 +74,7 @@ docker compose logs -f
 - Escaneie com o WhatsApp (aparelho principal).
 
 3) **Teste um comando**
-- No WhatsApp, envie: `status`
+- No WhatsApp, envie: `--status`
 - O Turion responde com uptime e info da maquina.
 
 4) **Mantenha rodando**
@@ -102,7 +102,7 @@ TURION_TIMEZONE=Europe/London
 ## Comandos no WhatsApp
 
 Basicos:
-- `status`
+- `--status`
 - `list scripts`
 - `run <script>`
 - `logs <projeto> [lines]`

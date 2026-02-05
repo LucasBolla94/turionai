@@ -19,17 +19,17 @@ Mensagem ? Pipeline ? (Grok JSON) ? Validação ? Skill/Executor ? Log + Memória
 ### Ações principais
 - **Responder mensagens** com tom humano (ajustado pelo usuário)
 - **Human UX Engine**: polimento de resposta com IA + templates (varia sem repetir)
-- **Executar comandos permitidos** (`status`, `run`, `logs`, `deploy`, `redeploy` etc.)
+- **Executar comandos permitidos** (`--status`, `run`, `logs`, `deploy`, `redeploy` etc.)
 - **Checar e resumir logs**
 - **CRON** (lembretes e tarefas programadas)
 - **Atualizar o próprio código** com `--update`
-- **Checar status da API do Grok** (conectada e respondendo)
+- **Checar status das APIs** (Grok, Email, WhatsApp)
 - **Email (Gmail/iCloud)**: listar, ler, explicar, responder e apagar
 - **Memória inteligente**: lembrar fatos, decisões e projetos
 - **Onboarding humanizado** (primeira configuração)
 
 ### Exemplos de comandos úteis
-- `status`
+- `--status`
 - `list scripts`
 - `run <script>`
 - `deploy <nome> <repo>`

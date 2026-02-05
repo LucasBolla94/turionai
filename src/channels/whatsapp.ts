@@ -9,6 +9,7 @@ import { Boom } from "@hapi/boom";
 import qrcode from "qrcode";
 import pino from "pino";
 import { resolve } from "node:path";
+import { statfsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { isAuthorized } from "../config/allowlist";
 import { classifyMessage } from "../core/messagePipeline";
@@ -49,6 +50,7 @@ import { getTimezone } from "../core/timezone";
 import { EmailSkill } from "../skills/emailSkill";
 import { clearPending, getPending, setPending } from "../core/pendingActions";
 import { loadEmailConfig } from "../core/emailStore";
+import { listEmails } from "../core/emailClient";
 import { consumeUpdatePending, hasUpdatePending, markUpdatePending } from "../core/updateStatus";
 import { addEmailRule, extractEmailDomain } from "../core/emailRules";
 import { loadEmailSnapshot } from "../core/emailSnapshot";
@@ -628,12 +630,27 @@ async function handleCommand(
   if (cmd === "status") {
     const uptimeSec = Math.floor(process.uptime());
     const memory = process.memoryUsage();
+    const load = os.loadavg?.() ?? [];
+    let diskLine = "- disk: n/a";
+    try {
+      const stats = statfsSync("/");
+      const total = stats.blocks * stats.bsize;
+      const free = stats.bfree * stats.bsize;
+      const used = total - free;
+      const toGb = (value: number) => Math.round((value / 1024 / 1024 / 1024) * 10) / 10;
+      diskLine = `- disk: ${toGb(used)}GB used / ${toGb(total)}GB total`;
+    } catch {
+      // ignore disk errors
+    }
     const response = [
       "Status",
+      `- assistant: online`,
       `- uptime: ${uptimeSec}s`,
       `- platform: ${process.platform} ${process.arch}`,
       `- hostname: ${os.hostname()}`,
-      `- rss: ${Math.round(memory.rss / 1024 / 1024)} MB`,
+      `- cpu_load: ${load.length ? load.map((v) => v.toFixed(2)).join(", ") : "n/a"}`,
+      `- ram: ${Math.round(memory.rss / 1024 / 1024)} MB rss`,
+      diskLine,
     ].join("\n");
     await sendAndLog(socket, to, threadId, response);
     return;
@@ -1231,19 +1248,39 @@ async function handleBrain(
       }
 
       if (parseApiStatusRequest(text)) {
-        const result = await checkXaiHealth();
-        if (result.ok) {
-          await sendAndLog(socket, to, threadId, "Sim, a API do Grok está respondendo normalmente.");
-        } else if (result.message.includes("XAI_API_KEY")) {
-          await sendAndLog(
-            socket,
-            to,
-            threadId,
-            "Ainda nao tenho a XAI_API_KEY configurada. Me envie a chave e eu valido na hora.",
-          );
+        const xai = await checkXaiHealth();
+        const email = await checkEmailHealth();
+        const lines = ["Status das APIs:"];
+        if (xai.ok) {
+          lines.push("- Grok: OK");
+        } else if (xai.message.includes("XAI_API_KEY")) {
+          lines.push("- Grok: chave nao configurada");
         } else {
-          await sendAndLog(socket, to, threadId, `A API não respondeu: ${result.message}`);
+          lines.push(`- Grok: erro (${xai.message})`);
         }
+        if (!email.configured) {
+          lines.push("- Email: nao configurado");
+        } else if (email.ok) {
+          lines.push("- Email: OK");
+        } else {
+          lines.push(`- Email: erro (${email.message})`);
+        }
+        lines.push("- WhatsApp: online");
+
+        const fixes: string[] = [];
+        if (!xai.ok && xai.message.includes("XAI_API_KEY")) {
+          fixes.push("Envie sua XAI_API_KEY para eu validar na hora.");
+        }
+        if (!email.configured) {
+          fixes.push("Se quiser email, diga: conectar email.");
+        }
+        if (fixes.length) {
+          lines.push("");
+          lines.push("Como corrigir:");
+          lines.push(...fixes.map((item) => `- ${item}`));
+        }
+
+        await sendAndLog(socket, to, threadId, lines.join("\n"));
         return;
       }
 
@@ -1776,6 +1813,35 @@ function parseApiStatusRequest(text: string): boolean {
     normalized.includes("respond") ||
     normalized.includes("status");
   return hasApi && hasCheck;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), ms);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
+async function checkEmailHealth(): Promise<{ ok: boolean; message: string; configured: boolean }> {
+  const config = await loadEmailConfig();
+  if (!config) {
+    return { ok: false, message: "nao configurado", configured: false };
+  }
+  try {
+    await withTimeout(listEmails(config, { limit: 1, unreadOnly: true }), 8000);
+    return { ok: true, message: "ok", configured: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "falha desconhecida";
+    return { ok: false, message, configured: true };
+  }
 }
 function resolveUpdateCheck(status: string): { kind: "available" | "up_to_date" | "error" | "unknown"; message?: string } {
   if (status.includes("UPDATE_AVAILABLE")) return { kind: "available" };
@@ -2944,6 +3010,7 @@ async function executeUpdate(
     await sendAndLog(socket, to, threadId, `${summary} Reiniciando... Ja volto.`);
   setTimeout(() => process.exit(0), 1000);
 }
+
 
 
 
