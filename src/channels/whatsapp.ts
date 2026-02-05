@@ -3373,12 +3373,12 @@ function randomUpdateBackMessage(): string {
 
 function pickUpdateFoundMessage(): string {
   const messages = [
-    "Achei um update aqui. Vou aplicar agora, ja volto.",
-    "Tem atualizacao pendente. Vou aproveitar e atualizar rapidinho.",
-    "Atualizacao encontrada. Vou aplicar e ja te chamo de volta.",
-    "Encontrei update. Vou atualizar aqui e ja volto online.",
-    "Preciso fazer um update aqui. Enquanto roda, vou pegar uma agua.",
-    "Tem update para fazer. Vou aplicar e ja te aviso quando voltar.",
+    "Achei um update pro meu sistema. Vou aplicar agora e ja volto.",
+    "Tem atualizacao do meu sistema pendente. Vou atualizar rapidinho.",
+    "Atualizacao encontrada aqui no meu sistema. Vou aplicar e ja volto.",
+    "Encontrei update do meu sistema. Vou atualizar e ja volto online.",
+    "Preciso atualizar meu sistema agora. Enquanto roda, ja volto.",
+    "Tem update do meu sistema para fazer. Vou aplicar e ja te aviso quando voltar.",
   ];
   return messages[Math.floor(Math.random() * messages.length)];
 }
