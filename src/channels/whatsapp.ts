@@ -2758,6 +2758,52 @@ function parsePickIndex(text: string, max: number): number | null {
   return index - 1;
 }
 
+async function deleteResolvedEmails(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  items: Array<{ id: number; sender: string; subject: string }>,
+): Promise<void> {
+  const emailSkill = new EmailSkill();
+  const failures: Array<string> = [];
+  let successCount = 0;
+  for (const item of items) {
+    try {
+      const result = await emailSkill.execute(
+        { action: "delete", id: item.id },
+        { platform: process.platform },
+      );
+      if (!result.ok) {
+        failures.push(`${item.sender} (#${item.id})`);
+        continue;
+      }
+      successCount += 1;
+    } catch {
+      failures.push(`${item.sender} (#${item.id})`);
+    }
+  }
+  if (successCount === 0) {
+    await sendAndLog(socket, to, threadId, "Tentei apagar, mas deu erro. Quer que eu tente de novo?");
+    return;
+  }
+  if (failures.length > 0) {
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      `Apaguei ${successCount}, mas falhei em: ${failures.join(", ")}.`,
+    );
+    return;
+  }
+  const plural = successCount > 1 ? "emails" : "email";
+  await sendAndLog(
+    socket,
+    to,
+    threadId,
+    `Pronto ✅ Deletei ${successCount} ${plural}.`,
+  );
+}
+
 async function maybeHandleEmailDeleteRequest(
   socket: WASocket,
   to: string,
@@ -2798,17 +2844,7 @@ async function maybeHandleEmailDeleteRequest(
     await sendAndLog(socket, to, threadId, buildEmailPickPrompt(resolved.items));
     return true;
   }
-  await setPending(threadId, {
-    type: "EMAIL_DELETE_CONFIRM",
-    items: resolved.items.map((item) => ({
-      id: item.id,
-      sender: item.sender,
-      subject: item.subject,
-    })),
-    createdAt: new Date().toISOString(),
-  });
-
-  await sendAndLog(socket, to, threadId, buildEmailDeletePrompt(resolved.items));
+  await deleteResolvedEmails(socket, to, threadId, resolved.items);
   return true;
 }
 

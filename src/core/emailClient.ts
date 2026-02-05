@@ -138,7 +138,15 @@ export async function deleteEmail(config: EmailConfig, id: number): Promise<void
       authTimeout: 10000,
     },
   });
-  await connection.openBox("INBOX");
+  await new Promise<void>((resolve, reject) => {
+    connection.imap.openBox("INBOX", false, (error: Error | null) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
   await connection.addFlags(id, "\\\\Deleted");
   await new Promise<void>((resolve, reject) => {
     connection.imap.expunge((error: unknown) => {
