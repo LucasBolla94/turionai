@@ -1663,9 +1663,14 @@ async function sendAndLog(
   to: string,
   threadId: string,
   text: string,
+  options: { polish?: boolean } = {},
 ): Promise<void> {
   await sendTyping(socket, to, 1200);
-  const formattedText = await polishReply(text);
+  const marker = "/*__NOPOLISH__*/";
+  const hasMarker = text.includes(marker);
+  const cleanedText = hasMarker ? text.replace(marker, "").trim() : text.trim();
+  const shouldPolish = options.polish !== false && !hasMarker;
+  const formattedText = shouldPolish ? await polishReply(cleanedText) : cleanedText;
   await socket.sendMessage(to, { text: formattedText });
   await appendConversation({
     ts: new Date().toISOString(),
@@ -2634,7 +2639,7 @@ async function handleOwnerSetup(
       stage: "ask_name",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(socket, to, threadId, "Boa! Como voce prefere que eu te chame?");
+    await sendAndLog(socket, to, threadId, "Boa! Como voce prefere que eu te chame?"); /*__NOPOLISH__*/
     return true;
   }
 
@@ -2652,7 +2657,7 @@ async function handleOwnerSetup(
       socket,
       to,
       threadId,
-      "Boa. No seu dia a dia, voce trabalha com o que? ou o que voce mais faz?",
+      "Boa. No seu dia a dia, voce trabalha com o que? ou o que voce mais faz?", /*__NOPOLISH__*/
     );
     return true;
   }
@@ -2674,7 +2679,7 @@ async function handleOwnerSetup(
       socket,
       to,
       threadId,
-      "E voce ta em qual cidade hoje? (e pais, se puder)",
+      "E voce ta em qual cidade hoje? (e pais, se puder)", /*__NOPOLISH__*/
     );
     return true;
   }
@@ -2712,7 +2717,7 @@ async function handleOwnerSetup(
       socket,
       to,
       threadId,
-      "E voce ta em qual cidade hoje? (e pais, se puder)",
+      "E voce ta em qual cidade hoje? (e pais, se puder)", /*__NOPOLISH__*/
     );
     return true;
   }
