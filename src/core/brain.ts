@@ -1,5 +1,7 @@
 const DEFAULT_MODEL = "grok-4-1-fast-reasoning";
 const XAI_ENDPOINT = "https://api.x.ai/v1/chat/completions";
+const DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-2024-10-22";
+const ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages";
 
 function getApiKey(): string | null {
   const apiKey = process.env.XAI_API_KEY;
@@ -8,6 +10,15 @@ function getApiKey(): string | null {
 
 function getModel(): string {
   return process.env.TURION_XAI_MODEL || DEFAULT_MODEL;
+}
+
+function getAnthropicKey(): string | null {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  return apiKey || null;
+}
+
+function getAnthropicModel(): string {
+  return process.env.TURION_ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
 }
 
 async function callXai(system: string, input: string): Promise<string> {
@@ -42,6 +53,74 @@ async function callXai(system: string, input: string): Promise<string> {
 
   const data = await response.json();
   return data?.choices?.[0]?.message?.content ?? "";
+}
+
+async function callAnthropic(system: string, input: string): Promise<string> {
+  const apiKey = getAnthropicKey();
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY n?o configurada.");
+  }
+
+  const model = getAnthropicModel();
+  const body = {
+    model,
+    max_tokens: 900,
+    system,
+    messages: [{ role: "user", content: input }],
+  };
+
+  const response = await fetch(ANTHROPIC_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Anthropic error ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  const content = data?.content?.[0]?.text ?? "";
+  return content;
+}
+
+async function buildReplyWithAnthropic(input: string, result: BrainResult): Promise<string | null> {
+  const system = [
+    "Voce e Tur, assistente pessoal.",
+    "Use o contexto do JSON de interpretacao para responder ao usuario.",
+    "Responda em portugues, natural e direto.",
+    "Mantenha o fluxo de assistente: reconheca em uma linha, responda direto, bullets se ajudarem.",
+    "Nao invente fatos.",
+    "Se faltar informacao, pergunte objetivamente.",
+    "Retorne apenas o texto final (sem JSON).",
+  ].join(" ");
+
+  const payload = {
+    user_message: input,
+    intent: result.intent,
+    args: result.args,
+    missing: result.missing,
+    needs_confirmation: result.needs_confirmation,
+    action: result.action,
+    plan: result.plan,
+    questions: result.questions,
+    reply_draft: result.reply ?? "",
+  };
+
+  const content = await callAnthropic(system, JSON.stringify(payload));
+  return content?.trim() || null;
+}
+
+function decorateReply(reply: string, provider: "anthropic" | "grok"): string {
+  const marker = provider === "anthropic" ? "??" : "??";
+  const cleaned = reply.trim();
+  if (!cleaned) return cleaned;
+  return `${marker} ${cleaned}`;
 }
 
 export interface BrainResult {
@@ -157,7 +236,23 @@ export async function interpretStrictJson(input: string): Promise<BrainResult | 
   ].join(" ");
 
   const content = await callXai(system, input);
-  return extractJson(content);
+  const result = extractJson(content);
+  if (!result) return null;
+  try {
+    if (getAnthropicKey()) {
+      const reply = await buildReplyWithAnthropic(input, result);
+      if (reply) {
+        result.reply = decorateReply(reply, "anthropic");
+        return result;
+      }
+    }
+  } catch {
+    // fallback to Grok reply
+  }
+  if (result.reply) {
+    result.reply = decorateReply(result.reply, "grok");
+  }
+  return result;
 }
 
 export async function diagnoseLogs(input: string): Promise<DiagnoseResult | null> {

@@ -16,6 +16,12 @@ Fluxo simplificado:
    - plano com várias Skills
    - pedido de confirmação
 
+## Configuracao de APIs
+- XAI_API_KEY: obrigatoria para interpretar intencoes.
+- ANTHROPIC_API_KEY: opcional; quando configurada, ela gera as respostas finais (Sonnet).
+- Se a Anthropic nao estiver configurada, o Grok responde como fallback.
+
+
 ## 2) Classificação Rápida (Message Pipeline)
 Arquivo: `src/core/messagePipeline.ts`
 
@@ -24,13 +30,16 @@ Função:
 - Extrair args simples.
 - Evitar gastar tokens do Brain em mensagens óbvias.
 
-## 3) Brain (Grok) — Interpretação de Intenção
+## 3) Brain (Grok) ? Interpretacao de Intencao
 Arquivo: `src/core/brain.ts`
 
 Como funciona:
 - Envia um prompt do sistema para o Grok com regras estritas.
-- O Grok retorna JSON obrigatório (intent, args, action, reply, etc.).
-- O sistema nunca executa comandos diretamente do Brain sem validação.
+- O Grok retorna JSON obrigatorio (intent, args, action, reply, etc.).
+- A resposta final ao usuario e gerada pela Anthropic (Sonnet) quando configurada.
+- Se a Anthropic falhar ou nao estiver configurada, o Grok responde (fallback).
+- As respostas indicam o provedor: ?? Anthropic e ?? Grok.
+- O sistema nunca executa comandos diretamente do Brain sem validacao.
 
 ### Exemplo de saída esperada do Brain (JSON):
 ```json

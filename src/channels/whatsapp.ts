@@ -86,6 +86,10 @@ function isLikelyXaiKey(value: string): boolean {
   return /^xai-[A-Za-z0-9]{20,}$/.test(value.trim());
 }
 
+function isLikelyAnthropicKey(value: string): boolean {
+  return /^sk-ant-[A-Za-z0-9-_]{10,}$/.test(value.trim());
+}
+
 function parseRelativeReminder(text: string): { message: string; offsetMs: number } | null {
   const normalized = text.toLowerCase();
   if (!normalized.includes("lembre") && !normalized.includes("lembra")) {
@@ -698,8 +702,14 @@ export async function initWhatsApp(): Promise<WASocket> {
             continue;
           }
         }
-        const awaitingApiKey = pending?.type === "OWNER_SETUP" && pending.stage === "await_api_key";
+        const awaitingApiKey =
+          pending?.type === "OWNER_SETUP" &&
+          (pending.stage === "await_api_key" || pending.stage === "await_anthropic_key");
         if (!awaitingApiKey) {
+          const handledAnthropic = await handleStandaloneAnthropicKey(socket, from, threadId, text);
+          if (handledAnthropic) {
+            continue;
+          }
           const handledKey = await handleStandaloneApiKey(socket, from, threadId, text);
           if (handledKey) {
             continue;
@@ -2571,6 +2581,7 @@ async function handlePendingDecision(
         type: "OWNER_SETUP";
         stage:
           | "await_api_key"
+          | "await_anthropic_key"
           | "ask_assistant_name"
           | "ask_user_name"
           | "ask_location"
@@ -3036,6 +3047,7 @@ async function handleOwnerSetup(
     type: "OWNER_SETUP";
     stage:
       | "await_api_key"
+      | "await_anthropic_key"
       | "ask_assistant_name"
       | "ask_user_name"
       | "ask_location"
@@ -3064,6 +3076,45 @@ async function handleOwnerSetup(
     await saveEnvValue("XAI_API_KEY", value);
     process.env.XAI_API_KEY = value;
     await addMemoryItem("decision", "Grok configurado como modelo principal");
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "await_anthropic_key",
+      createdAt: new Date().toISOString(),
+    });
+    await sendSetup(
+      isEnglish
+        ? "If you have an Anthropic (Sonnet) API key, send it now. If not, reply 'skip'."
+        : "Se tiver a chave da Anthropic (Sonnet), me envie agora. Se nao tiver, responda 'pular'.",
+    );
+    return true;
+  }
+
+  if (pending.stage === "await_anthropic_key") {
+    const lower = value.toLowerCase();
+    if (lower === "pular" || lower === "skip" || lower === "nao" || lower === "não") {
+      await setPending(threadId, {
+        type: "OWNER_SETUP",
+        stage: "ask_assistant_name",
+        createdAt: new Date().toISOString(),
+      });
+      await sendSetup(
+        isEnglish
+          ? "Great. I'm an AI created by Turion Network. What name should I go by?"
+          : "Perfeito. Sou uma IA criada pela Turion Network. Como voce quer que eu me chame?",
+      );
+      return true;
+    }
+    if (!isLikelyAnthropicKey(value)) {
+      await sendSetup(
+        isEnglish
+          ? "That doesn't look like an Anthropic key. Send it starting with sk-ant- or reply 'skip'."
+          : "Essa chave nao parece da Anthropic. Envie a chave começando com sk-ant- ou responda 'pular'.",
+      );
+      return true;
+    }
+    await saveEnvValue("ANTHROPIC_API_KEY", value);
+    process.env.ANTHROPIC_API_KEY = value;
+    await addMemoryItem("decision", "Anthropic configurada (Sonnet)");
     await setPending(threadId, {
       type: "OWNER_SETUP",
       stage: "ask_assistant_name",
@@ -3283,6 +3334,23 @@ async function handleStandaloneApiKey(
   return true;
 }
 
+async function handleStandaloneAnthropicKey(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  text: string,
+): Promise<boolean> {
+  const value = text.trim();
+  const sendSetup = (msg: string) => sendAndLog(socket, to, threadId, msg, { polish: false });
+  if (!isLikelyAnthropicKey(value)) {
+    return false;
+  }
+  await saveEnvValue("ANTHROPIC_API_KEY", value);
+  process.env.ANTHROPIC_API_KEY = value;
+  await addMemoryItem("decision", "Anthropic configurada (Sonnet)");
+  await sendSetup("Chave da Anthropic salva. Posso continuar?");
+  return true;
+}
 function normalizeEmailArgs(
   intent: string,
   args: Record<string, unknown>,
