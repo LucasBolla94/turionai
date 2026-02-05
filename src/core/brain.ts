@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { chooseProvider } from "./responseRouter";
 const DEFAULT_MODEL = "grok-4-1-fast-reasoning";
 const XAI_ENDPOINT = "https://api.x.ai/v1/chat/completions";
 const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929";
@@ -249,17 +250,20 @@ export async function interpretStrictJson(input: string): Promise<BrainResult | 
   const content = await callXai(system, input);
   const result = extractJson(content);
   if (!result) return null;
-  try {
-    if (getAnthropicKey()) {
+
+  const decision = await chooseProvider(input, result).catch(() => ({ provider: "grok" as const }));
+  if (decision.provider === "anthropic" && getAnthropicKey()) {
+    try {
       const reply = await buildReplyWithAnthropic(input, result);
       if (reply) {
         result.reply = decorateReply(reply, "anthropic");
         return result;
       }
+    } catch {
+      // fallback to Grok reply
     }
-  } catch {
-    // fallback to Grok reply
   }
+
   if (result.reply) {
     result.reply = decorateReply(result.reply, "grok");
   }

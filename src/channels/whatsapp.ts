@@ -58,6 +58,7 @@ import { applyFeedback, setBehaviorProfile, touchEmotionState } from "../core/be
 import { polishReply, syncStyleFromBehavior } from "../core/ux/HumanReply";
 import { recordInteraction, getInteractionState, markCheckinSent, setLastTopic } from "../core/interaction";
 import { updatePreferencesFromMessage } from "../core/preferences";
+import { updateRouterFromMessage } from "../core/responseRouter";
 import { ensurePairingCode, getOwnerState, setOwner, updateOwnerDetails } from "../core/owner";
 import { CAPABILITIES, HELP_SECTIONS } from "../config/capabilities";
 import { runSilentStudy } from "../core/studyEngine";
@@ -847,6 +848,7 @@ export async function initWhatsApp(): Promise<WASocket> {
       }
       await recordInteraction(threadId, from);
       await updatePreferencesFromMessage(text).catch(() => undefined);
+      await updateRouterFromMessage(text).catch(() => undefined);
       await touchEmotionState().catch(() => undefined);
       const feedback = await applyFeedback(text);
       if (feedback) {

@@ -59,6 +59,15 @@ Como funciona:
 }
 ```
 
+
+## 3.1) Response Router (Grok vs Anthropic)
+Arquivo: `src/core/responseRouter.ts`
+
+- Usa heuristicas + preferencias do usuario para decidir quem responde.
+- Mensagens simples -> Grok. Mensagens complexas -> Anthropic.
+- Aprende com o usuario (bias salvo em `state/router/router_state.json`).
+- Exemplo de sinais de complexidade: texto longo, logs/bugs, multi-etapas, plano com varias skills.
+
 ## 4) Decisao e Execucao
 Arquivo: `src/channels/whatsapp.ts`
 
