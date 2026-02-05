@@ -66,7 +66,10 @@ import { checkSupabaseHealth } from "../core/supabaseClient";
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
 const SEEN_TTL_MS = 5 * 60 * 1000;
-const typingState = new Map<string, { count: number; timer?: NodeJS.Timeout }>();
+const typingState = new Map<
+  string,
+  { count: number; timer?: NodeJS.Timeout; startedAt?: number }
+>();
 let lastQr: string | null = null;
 let lastQrAt = 0;
 let isInitializing = false;
@@ -463,6 +466,7 @@ async function startTyping(socket: WASocket, to: string): Promise<void> {
   const current = typingState.get(to) ?? { count: 0 };
   current.count += 1;
   if (!current.timer) {
+    current.startedAt = Date.now();
     await socket.sendPresenceUpdate("composing", to);
     current.timer = setInterval(() => {
       socket.sendPresenceUpdate("composing", to).catch(() => undefined);
@@ -480,6 +484,11 @@ async function stopTyping(socket: WASocket, to: string): Promise<void> {
       clearInterval(current.timer);
     }
     typingState.delete(to);
+    const startedAt = current.startedAt ?? Date.now();
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < 1500) {
+      await new Promise((r) => setTimeout(r, 1500 - elapsed));
+    }
     await socket.sendPresenceUpdate("paused", to);
     return;
   }
