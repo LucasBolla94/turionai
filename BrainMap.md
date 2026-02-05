@@ -105,16 +105,17 @@ Arquivos:
 - `src/config/capabilities.ts`
 
 Fluxo:
-1) Pareamento por código
+1) Pareamento por codigo
 2) API do Grok
-3) Nome
-4) Trabalho/rotina
-5) Tom/estilo
-6) Cidade/país ? inferir timezone
-7) Idioma
-8) Objetivo
-9) Confirmação final
-10) Pós-setup com exemplos
+3) Nome do assistente (definido pelo usuario)
+4) Nome do usuario (pergunta sutil)
+5) Cidade/pais -> IA infere timezone
+6) Confirmacao final
+7) Pos-setup com exemplos
+
+Notas:
+- Idioma -> detectado automaticamente pela linguagem do usuario.
+- Nao pergunta funcionalidade: padrao -> assistente pessoal.
 
 ### 3.10 Timezone
 Arquivo: `src/core/timezone.ts`

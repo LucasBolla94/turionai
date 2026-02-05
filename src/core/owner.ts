@@ -5,6 +5,7 @@ import { randomInt } from "node:crypto";
 export interface OwnerState {
   owner_jid?: string;
   owner_name?: string;
+  assistant_name?: string;
   owner_role?: string;
   pairing_code?: string;
   created_at: string;

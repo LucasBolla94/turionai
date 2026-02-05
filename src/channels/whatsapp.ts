@@ -129,9 +129,22 @@ function isPostSetupHelpRequest(text: string): boolean {
   );
 }
 
-function buildPostSetupIntro(name: string): string {
+function buildPostSetupIntro(
+  name: string,
+  assistantName: string,
+  language: string,
+): string {
+  if (language.startsWith("en")) {
+    const lines = [
+      `All set, ${name}. I'm ${assistantName}.`,
+      "Here are a few simple ways to use me:",
+      buildPostSetupHelp(),
+      "Want me to set something up now?",
+    ];
+    return lines.filter(Boolean).join("\n");
+  }
   const lines = [
-    `Fechado, ${name}.`,
+    `Fechado, ${name}. Eu sou ${assistantName}.`,
     "Aqui vao alguns jeitos simples de me usar:",
     buildPostSetupHelp(),
     "Quer que eu ja configure algo pra voce agora?",
@@ -212,14 +225,68 @@ function extractQuotedText(message: any): string | null {
 
 function buildOnboardingSummary(owner: Awaited<ReturnType<typeof getOwnerState>>): string {
   if (!owner) return "Fechou. Ainda preciso de alguns detalhes.";
+  const assistant = owner.assistant_name ?? "Tur";
   const name = owner.owner_name ?? "voce";
   const city = owner.city ?? "sua cidade";
   const country = owner.country ? `/${owner.country}` : "";
   const language = owner.language ?? "pt-BR";
-  const tone = owner.tone ?? "casual";
-  const detail = owner.response_detail ?? "media";
-  const goal = owner.goal ? ` Quer que eu te ajude com: ${owner.goal}.` : "";
-  return `Fechou: voce e ${name}, esta em ${city}${country}, prefere ${language}, tom ${tone} e respostas ${detail}.${goal}`;
+  const timezone = owner.timezone ?? "UTC";
+  if (language.startsWith("en")) {
+    return `Summary: I'm ${assistant}. You are ${name}, in ${city}${country}, language ${language}, timezone ${timezone}. Is that correct?`;
+  }
+  return `Resumo: eu sou ${assistant}. Voce e ${name}, esta em ${city}${country}, fala ${language} e seu fuso e ${timezone}. Tudo certo?`;
+}
+
+function detectUserLanguage(text: string): "pt-BR" | "en-US" | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (/^\d{4,6}$/.test(trimmed)) return null;
+  if (trimmed.startsWith("xai-")) return null;
+  const normalized = trimmed.toLowerCase();
+  if (/[ãáàâéêíóôõúç]/.test(normalized)) return "pt-BR";
+  const ptHits = [
+    "oi",
+    "ola",
+    "olá",
+    "por favor",
+    "obrigado",
+    "lembrete",
+    "me lembra",
+    "agora",
+    "amanha",
+    "voce",
+    "você",
+  ].filter((token) => normalized.includes(token)).length;
+  const enHits = [
+    "hi",
+    "hello",
+    "please",
+    "thanks",
+    "reminder",
+    "now",
+    "tomorrow",
+    "you",
+  ].filter((token) => normalized.includes(token)).length;
+  if (enHits > ptHits) return "en-US";
+  if (ptHits > 0) return "pt-BR";
+  return null;
+}
+
+async function ensureOwnerLanguage(
+  owner: Awaited<ReturnType<typeof getOwnerState>>,
+  text: string,
+): Promise<"pt-BR" | "en-US"> {
+  const detected = detectUserLanguage(text);
+  const current = owner?.language;
+  if (!current && detected) {
+    await updateOwnerDetails({ language: detected });
+    await addMemoryItem("user_fact", `idioma preferido: ${detected}`);
+    return detected;
+  }
+  if (current === "en-US" || current === "pt-BR") {
+    return current;
+  }
+  return detected ?? "pt-BR";
 }
 
 function markSeen(id: string): void {
@@ -465,6 +532,8 @@ export async function initWhatsApp(): Promise<WASocket> {
         const code = owner?.pairing_code ?? (await ensurePairingCode());
         const normalized = text.trim();
         if (normalized === code) {
+          const language = await ensureOwnerLanguage(owner, text);
+          const isEnglish = language.startsWith("en");
           await setOwner(sender);
           await setPending(threadId, {
             type: "OWNER_SETUP",
@@ -475,15 +544,23 @@ export async function initWhatsApp(): Promise<WASocket> {
             socket,
             from,
             threadId,
-            "Boa, pareamos com sucesso. Agora me envia a API do Grok (XAI_API_KEY).",
+            isEnglish
+              ? "Great, paired successfully. Now send your Grok API key (XAI_API_KEY)."
+              : "Boa, pareamos com sucesso. Agora me envia a API do Grok (XAI_API_KEY).",
+            { polish: false },
           );
           continue;
         }
+        const language = await ensureOwnerLanguage(owner, text);
+        const isEnglish = language.startsWith("en");
         await sendAndLog(
           socket,
           from,
           threadId,
-          "Para iniciar, me envia o codigo de pareamento que apareceu no terminal antes do QR.",
+          isEnglish
+            ? "To start, send the pairing code shown in the terminal before the QR. If you don't have it, contact http://turion.network."
+            : "Para iniciar, me envia o codigo de pareamento que apareceu no terminal antes do QR. Se nao tiver, fale com http://turion.network.",
+          { polish: false },
         );
         continue;
       }
@@ -2184,13 +2261,10 @@ async function handlePendingDecision(
         type: "OWNER_SETUP";
         stage:
           | "await_api_key"
-          | "ask_name"
-          | "ask_context"
-          | "ask_style"
+          | "ask_assistant_name"
+          | "ask_user_name"
           | "ask_location"
           | "ask_timezone"
-          | "ask_language"
-          | "ask_goal"
           | "confirm_summary";
       }
     | { type: "RUN_PLAN"; plan: Array<{ skill: string; args: Record<string, string | number | boolean | null> }> },
@@ -2606,13 +2680,10 @@ async function handleOwnerSetup(
     type: "OWNER_SETUP";
     stage:
       | "await_api_key"
-      | "ask_name"
-      | "ask_context"
-      | "ask_style"
+      | "ask_assistant_name"
+      | "ask_user_name"
       | "ask_location"
       | "ask_timezone"
-      | "ask_language"
-      | "ask_goal"
       | "confirm_summary";
   },
   text: string,
@@ -2621,10 +2692,17 @@ async function handleOwnerSetup(
   const sendSetup = (msg: string) => sendAndLog(socket, to, threadId, msg, { polish: false });
   if (!value) return false;
   const owner = await getOwnerState();
+  const language = await ensureOwnerLanguage(owner, value);
+  const isEnglish = language.startsWith("en");
+  const assistantFallback = owner?.assistant_name ?? "Tur";
 
   if (pending.stage === "await_api_key") {
     if (!value.startsWith("xai-")) {
-      await sendSetup("Essa chave nao parece valida. Envie a XAI_API_KEY comecando com xai-.");
+      await sendSetup(
+        isEnglish
+          ? "That key doesn't look valid. Send the XAI_API_KEY starting with xai-."
+          : "Essa chave nao parece valida. Envie a XAI_API_KEY comecando com xai-.",
+      );
       return true;
     }
     await saveEnvValue("XAI_API_KEY", value);
@@ -2632,107 +2710,88 @@ async function handleOwnerSetup(
     await addMemoryItem("decision", "Grok configurado como modelo principal");
     await setPending(threadId, {
       type: "OWNER_SETUP",
-      stage: "ask_name",
+      stage: "ask_assistant_name",
       createdAt: new Date().toISOString(),
     });
-    await sendSetup("Boa! Como voce prefere que eu te chame?");
+    await sendSetup(
+      isEnglish
+        ? "Great. I'm an AI created by Turion Network. What name should I go by?"
+        : "Perfeito. Sou uma IA criada pela Turion Network. Como voce quer que eu me chame?",
+    );
     return true;
   }
 
-  if (pending.stage === "ask_name") {
+  if (pending.stage === "ask_assistant_name") {
+    const ai = await interpretOnboardingAnswer("name", value).catch(() => null);
+    const assistantName = ai?.value?.trim() || value;
+    await updateOwnerDetails({ assistant_name: assistantName });
+    await addMemoryItem("user_fact", `nome do assistente: ${assistantName}`);
+    await setPending(threadId, {
+      type: "OWNER_SETUP",
+      stage: "ask_user_name",
+      createdAt: new Date().toISOString(),
+    });
+    await sendSetup(
+      isEnglish ? "And you—what should I call you?" : "E voce? Como prefere que eu te chame?",
+    );
+    return true;
+  }
+
+  if (pending.stage === "ask_user_name") {
     const ai = await interpretOnboardingAnswer("name", value).catch(() => null);
     const nameValue = ai?.value?.trim() || value;
     await updateOwnerDetails({ owner_name: nameValue });
     await addMemoryItem("user_fact", `nome preferido: ${nameValue}`);
     await setPending(threadId, {
       type: "OWNER_SETUP",
-      stage: "ask_context",
-      createdAt: new Date().toISOString(),
-    });
-    await sendSetup("Boa. No seu dia a dia, voce trabalha com o que? ou o que voce mais faz?");
-    return true;
-  }
-
-  if (pending.stage === "ask_context") {
-    const ai = await interpretOnboardingAnswer("role", value).catch(() => null);
-    const roleValue = ai?.value?.trim() || value;
-    await updateOwnerDetails({ owner_role: roleValue });
-    await addMemoryItem("user_fact", `contexto/rotina: ${roleValue}`);
-    await setBehaviorProfile({ formality: "casual", emoji_level: 0.1, verbosity: "medium" });
-    await updateOwnerDetails({ tone: "amigo", response_detail: "medium" });
-    await syncStyleFromBehavior().catch(() => undefined);
-    await setPending(threadId, {
-      type: "OWNER_SETUP",
       stage: "ask_location",
       createdAt: new Date().toISOString(),
     });
-    await sendSetup("E voce ta em qual cidade hoje? (e pais, se puder)");
-    return true;
-  }
-
-  if (pending.stage === "ask_style") {
-    const normalized = value.toLowerCase();
-    const ai = await interpretOnboardingAnswer("tone", value).catch(() => null);
-    const verbosity = ai?.verbosity;
-    const formality = ai?.formality;
-    if (verbosity) {
-      await setBehaviorProfile({ verbosity });
-      await updateOwnerDetails({ response_detail: verbosity });
-      await addMemoryItem("user_fact", `nivel de detalhe: ${verbosity}`);
-    }
-    if (formality) {
-      await setBehaviorProfile({ formality, emoji_level: formality === "casual" ? 0.1 : 0 });
-      await updateOwnerDetails({ tone: formality });
-      await addMemoryItem("user_fact", `tom preferido: ${formality}`);
-    }
-    if (normalized.includes("amigo")) {
-      await setBehaviorProfile({ formality: "casual", emoji_level: 0.1 });
-      await updateOwnerDetails({ tone: "amigo" });
-      await addMemoryItem("user_fact", "tom preferido: amigo");
-    }
-    if (!verbosity) {
-      await updateOwnerDetails({ response_detail: "medium" });
-    }
-    await syncStyleFromBehavior().catch(() => undefined);
-    await setPending(threadId, {
-      type: "OWNER_SETUP",
-      stage: "ask_location",
-      createdAt: new Date().toISOString(),
-    });
-    await sendSetup("E voce ta em qual cidade hoje? (e pais, se puder)");
+    await sendSetup(
+      isEnglish
+        ? "To set your time correctly, what city do you live in?"
+        : "Pra eu ajustar seus horarios direitinho, em que cidade voce mora?",
+    );
     return true;
   }
 
   if (pending.stage === "ask_location") {
-    const location = parseLocation(value);
+    const ai = await interpretOnboardingAnswer("location", value).catch(() => null);
+    const location = ai?.city ? { city: ai.city, country: ai.country } : parseLocation(value);
     await updateOwnerDetails({ city: location.city, country: location.country });
     await addMemoryItem("user_fact", `cidade: ${location.city}`);
     if (location.country) {
       await addMemoryItem("user_fact", `pais: ${location.country}`);
     }
-    const inferred = inferTimezoneFromLocation(location.city, location.country);
+    let inferred = ai?.timezone ?? inferTimezoneFromLocation(location.city, location.country);
     if (inferred) {
       try {
         await setTimezone(inferred);
         await updateOwnerDetails({ timezone: inferred });
         await addMemoryItem("user_fact", `fuso horario: ${inferred}`);
       } catch {
-        // ignore
+        inferred = null;
       }
+    }
+    if (!inferred) {
       await setPending(threadId, {
         type: "OWNER_SETUP",
-        stage: "ask_language",
+        stage: "ask_timezone",
         createdAt: new Date().toISOString(),
       });
-      await sendSetup("E no dia a dia, prefere falar em portugues ou ingles?");
+      await sendSetup(
+        isEnglish
+          ? "What's your timezone? (example: Europe/London)"
+          : "Qual e seu fuso horario? (ex: Europe/London)",
+      );
       return true;
     }
     await setPending(threadId, {
       type: "OWNER_SETUP",
-      stage: "ask_timezone",
+      stage: "confirm_summary",
       createdAt: new Date().toISOString(),
     });
-    await sendSetup("So pra eu acertar seus horarios certinho: seu horario e o de Londres mesmo? (ex: Europe/London)");
+    await sendSetup(buildOnboardingSummary(await getOwnerState()));
     return true;
   }
 
@@ -2749,44 +2808,19 @@ async function handleOwnerSetup(
       await updateOwnerDetails({ timezone: tz });
       await addMemoryItem("user_fact", `fuso horario: ${tz}`);
     } catch {
-      await sendSetup("Nao consegui identificar seu horario. Ex: Europe/London ou America/Sao_Paulo.");
+      await sendSetup(
+        isEnglish
+          ? "I couldn't identify your timezone. Example: Europe/London or America/Sao_Paulo."
+          : "Nao consegui identificar seu horario. Ex: Europe/London ou America/Sao_Paulo.",
+      );
       return true;
     }
-    await setPending(threadId, {
-      type: "OWNER_SETUP",
-      stage: "ask_language",
-      createdAt: new Date().toISOString(),
-    });
-    await sendSetup("E no dia a dia, prefere falar em portugues ou ingles?");
-    return true;
-  }
-
-  if (pending.stage === "ask_language") {
-    const ai = await interpretOnboardingAnswer("language", value).catch(() => null);
-    const langValue = ai?.language ?? ai?.value ?? value;
-    await updateOwnerDetails({ language: langValue });
-    await addMemoryItem("user_fact", `idioma preferido: ${langValue}`);
-    await setPending(threadId, {
-      type: "OWNER_SETUP",
-      stage: "ask_goal",
-      createdAt: new Date().toISOString(),
-    });
-    await sendSetup("Na pratica, como voce quer que eu te ajude no dia a dia?");
-    return true;
-  }
-
-  if (pending.stage === "ask_goal") {
-    const ai = await interpretOnboardingAnswer("goals", value).catch(() => null);
-    const goalValue = ai?.value ?? value;
-    await updateOwnerDetails({ goal: goalValue });
-    await addMemoryItem("user_fact", `objetivo: ${goalValue}`);
     await setPending(threadId, {
       type: "OWNER_SETUP",
       stage: "confirm_summary",
       createdAt: new Date().toISOString(),
     });
-    const summary = buildOnboardingSummary(await getOwnerState());
-    await sendSetup(`${summary}\nAcertei?`);
+    await sendSetup(buildOnboardingSummary(await getOwnerState()));
     return true;
   }
 
@@ -2796,10 +2830,11 @@ async function handleOwnerSetup(
       await clearPending(threadId);
       const freshOwner = await getOwnerState();
       const name = freshOwner?.owner_name ?? "por aqui";
+      const assistantName = freshOwner?.assistant_name ?? assistantFallback;
       const message = [
-        "Boa, te explico rapidinho.",
+        isEnglish ? "Sure, quick intro:" : "Boa, te explico rapidinho.",
         buildPostSetupHelp(),
-        "Se quiser, posso configurar algo agora.",
+        isEnglish ? "Want me to set something up now?" : "Se quiser, posso configurar algo agora.",
       ].join("\n");
       await sendSetup(message);
       return true;
@@ -2813,25 +2848,38 @@ async function handleOwnerSetup(
       await clearPending(threadId);
       const freshOwner = await getOwnerState();
       const name = freshOwner?.owner_name ?? "por aqui";
-      await sendSetup(buildPostSetupIntro(name));
+      const assistantName = freshOwner?.assistant_name ?? assistantFallback;
+      const finalLanguage = freshOwner?.language ?? language;
+      await sendSetup(buildPostSetupIntro(name, assistantName, finalLanguage));
       return true;
     }
     const lower = value.toLowerCase();
-    let nextStage: "ask_name" | "ask_language" | "ask_style" | "ask_goal" | "ask_location" =
+    let nextStage: "ask_assistant_name" | "ask_user_name" | "ask_location" | "ask_timezone" =
       "ask_location";
-    if (lower.includes("nome")) nextStage = "ask_name";
-    else if (lower.includes("idioma")) nextStage = "ask_language";
-    else if (lower.includes("tom") || lower.includes("jeito")) nextStage = "ask_style";
-    else if (lower.includes("objetivo")) nextStage = "ask_goal";
+    if (lower.includes("assistente") || lower.includes("seu nome") || lower.includes("se chama")) {
+      nextStage = "ask_assistant_name";
+    } else if (lower.includes("meu nome") || lower.includes("usuario") || lower.includes("nome")) {
+      nextStage = "ask_user_name";
+    } else if (lower.includes("fuso") || lower.includes("horario")) {
+      nextStage = "ask_timezone";
+    }
     if (lower.includes("corrigir") || lower.includes("ajustar")) {
       await setPending(threadId, {
         type: "OWNER_SETUP",
         stage: nextStage,
         createdAt: new Date().toISOString(),
       });
-      await sendSetup("Beleza. Me diz o que voce quer ajustar primeiro.");
+      await sendSetup(
+        isEnglish
+          ? "Okay. Tell me what you want to adjust first."
+          : "Beleza. Me diz o que voce quer ajustar primeiro.",
+      );
     } else {
-      await sendSetup("Se quiser ajustar algo, me diz: nome, cidade, idioma, tom ou objetivo.");
+      await sendSetup(
+        isEnglish
+          ? "If you want to adjust something, say: my name, your name, city, or timezone."
+          : "Se quiser ajustar algo, me diz: meu nome, seu nome, cidade ou fuso horario.",
+      );
     }
     return true;
   }

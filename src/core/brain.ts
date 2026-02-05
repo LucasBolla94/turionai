@@ -121,8 +121,11 @@ function extractJsonGeneric<T>(text: string): T | null {
 }
 
 export async function interpretStrictJson(input: string): Promise<BrainResult | null> {
+  const owner = await (await import("./owner")).getOwnerState().catch(() => null);
+  const assistantName = owner?.assistant_name ?? "Tur";
   const system = [
-    "Seu nome é Tur.",
+    `Seu nome é ${assistantName}.`,
+    "Você é uma IA criada pela Turion Network.",
     "Você é o interpretador do Turion (assistente pessoal).",
     "Fale de forma humana, curta e clara, sem parecer robô.",
     "Estilo padrão: amigável e profissional. Nada de explicação excessiva.",
@@ -312,13 +315,15 @@ export async function generateSilentStudy(input: { topic: string; seed: number }
 export interface OnboardingAnswer {
   value: string;
   timezone?: string;
+  city?: string;
+  country?: string;
   verbosity?: "short" | "medium" | "long";
   formality?: "formal" | "casual";
   language?: string;
 }
 
 export async function interpretOnboardingAnswer(
-  step: "name" | "role" | "tone" | "timezone" | "language" | "goals",
+  step: "name" | "role" | "tone" | "timezone" | "language" | "goals" | "location",
   input: string,
 ): Promise<OnboardingAnswer | null> {
   const system = [
@@ -327,6 +332,7 @@ export async function interpretOnboardingAnswer(
     "Retorne apenas JSON.",
     "Campos: value (string) sempre.",
     "Se step=timezone, retorne timezone em formato Region/City.",
+    "Se step=location, retorne city (string), country (string opcional) e timezone (Region/City) se souber.",
     "Se step=tone, retorne verbosity (short|medium|long) e/ou formality (formal|casual).",
     "Se step=language, retorne language (ex: pt-BR, en-US).",
     "Nao invente informacoes.",
@@ -334,3 +340,4 @@ export async function interpretOnboardingAnswer(
   const content = await callXai(system, JSON.stringify({ step, input }));
   return extractJsonGeneric<OnboardingAnswer>(content);
 }
+
