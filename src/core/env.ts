@@ -20,7 +20,8 @@ export function loadEnvFromFile(envPath = resolve(".env")): void {
     const key = trimmed.slice(0, eq).trim();
     const value = stripQuotes(trimmed.slice(eq + 1).trim());
     if (!key) continue;
-    if (process.env[key] === undefined) {
+    const current = process.env[key];
+    if (current === undefined || current === "") {
       process.env[key] = value;
     }
   }
