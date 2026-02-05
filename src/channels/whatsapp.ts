@@ -1235,31 +1235,29 @@ async function handleBrain(
     }
 
     const provider = parseEmailProvider(text);
-      if (provider) {
-        await setPending(threadId, {
-          type: "EMAIL_CONNECT_FLOW",
-          provider,
-          stage: "await_email",
-          createdAt: new Date().toISOString(),
-        });
-        if (provider === "icloud") {
-          await sendAndLog(socket, to, threadId, buildIcloudStepsIntro());
-        } else {
-          await sendAndLog(
-            socket,
-            to,
-            threadId,
-            [
-              "Perfeito. Para Gmail usamos App Password (mais seguro que a senha principal).",
-              "Se quiser, eu explico com calma o passo a passo.",
-              "Agora me envie seu email completo.",
-            ].join("\n"),
-          );
-        }
-        return;
+    if (provider) {
+      await setPending(threadId, {
+        type: "EMAIL_CONNECT_FLOW",
+        provider,
+        stage: "await_email",
+        createdAt: new Date().toISOString(),
+      });
+      if (provider === "icloud") {
+        await sendAndLog(socket, to, threadId, buildIcloudStepsIntro());
+      } else {
+        await sendAndLog(
+          socket,
+          to,
+          threadId,
+          [
+            "Perfeito. Para Gmail usamos App Password (mais seguro que a senha principal).",
+            "Se quiser, eu explico com calma o passo a passo.",
+            "Agora me envie seu email completo.",
+          ].join("\n"),
+        );
       }
-
-      }
+      return;
+    }
 
       if (parseModelUpdateQuestion(text)) {
         await sendAndLog(socket, to, threadId, buildModelUpdateExplanation());
