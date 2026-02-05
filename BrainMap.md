@@ -25,6 +25,7 @@ Mensagem ? Pipeline ? (Grok JSON) ? Validao ? Skill/Executor ? Log + Memria
 - **Atualizar o prprio cdigo** com `--update`
 - **Checar status das APIs** (Grok, Email, WhatsApp)
 - **Email (Gmail/iCloud)**: listar, ler, explicar, responder e apagar
+- **Supabase**: criar schema/tabelas/indexes via SQL seguro e buckets
 - **Memria inteligente**: lembrar fatos, decises e projetos
 - **Onboarding humanizado** (primeira configurao)
 

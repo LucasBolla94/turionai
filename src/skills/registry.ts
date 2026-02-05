@@ -5,6 +5,7 @@ import { DeploySkill } from "./deploySkill";
 import { LogsSkill } from "./logsSkill";
 import { CronSkill } from "./cronSkill";
 import { EmailSkill } from "./emailSkill";
+import { SupabaseSkill } from "./supabaseSkill";
 
 const skills: Skill[] = [
   new StatusSkill(),
@@ -13,6 +14,7 @@ const skills: Skill[] = [
   new LogsSkill(),
   new CronSkill(),
   new EmailSkill(),
+  new SupabaseSkill(),
 ];
 
 export function getSkills(): Skill[] {

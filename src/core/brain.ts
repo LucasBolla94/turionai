@@ -151,6 +151,9 @@ export async function interpretStrictJson(input: string): Promise<BrainResult | 
     "EMAIL_CONNECT args: action:'connect', provider, user, password. EMAIL_LIST args: action:'list', limit, unreadOnly. EMAIL_READ args: action:'read', id. EMAIL_REPLY args: action:'reply', id, body. EMAIL_DELETE args: action:'delete', id.",
     "EMAIL_EXPLAIN args: action:'explain', id. EMAIL_DRAFT args: action:'draft_reply', id, instruction.",
     "Para monitoramento de email: use intent CRON_CREATE com jobType 'email_monitor' e payload JSON {to, unreadOnly, limit}.",
+    "Para Supabase: use SUPABASE_SQL com args {sql, allowDestructive}.",
+    "Para buckets do Supabase: SUPABASE_BUCKET_LIST (sem args) e SUPABASE_BUCKET_CREATE com args {name, public}.",
+    "Para criar schema/tabela/index: descreva um plano curto no reply e marque needs_confirmation=true antes de executar.",
   ].join(" ");
 
   const content = await callXai(system, input);

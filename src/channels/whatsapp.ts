@@ -1684,10 +1684,10 @@ async function handleBrain(
     }
     const skipReply =
       result.action === "RUN_SKILL" && result.intent === "CRON_CREATE";
-    if (result.reply && !skipReply) {
-      const structured = enforceResponseStructure(result.reply);
-      await sendAndLog(socket, to, threadId, structured);
-    } else if (!result.reply && !skipReply) {
+  if (result.reply && !skipReply) {
+    const structured = enforceResponseStructure(result.reply);
+    await sendAndLog(socket, to, threadId, structured);
+  } else if (!result.reply && !skipReply) {
       const responseLines = [
         `Intent: ${result.intent}`,
         `Args: ${JSON.stringify(result.args)}`,
@@ -1695,10 +1695,34 @@ async function handleBrain(
         `Needs confirmation: ${result.needs_confirmation}`,
       ];
       await sendAndLog(socket, to, threadId, responseLines.join("\n"));
-    }
+  }
 
-    if (result.needs_confirmation && (result.action === "RUN_PLAN" || result.action === "RUN_SKILL")) {
-      if (result.action === "RUN_PLAN" && Array.isArray(result.plan)) {
+  if (
+    result.action === "RUN_SKILL" &&
+    result.intent === "SUPABASE_SQL" &&
+    !result.needs_confirmation
+  ) {
+    const args = result.args ?? {};
+    if (args.sql && !args.allowDestructive) {
+      await sendAndLog(
+        socket,
+        to,
+        threadId,
+        "Deu um erro em confirmação pendente. Vou arrumar pedindo confirmação primeiro.",
+      );
+      await setPending(threadId, {
+        type: "RUN_SKILL",
+        intent: result.intent,
+        args,
+        createdAt: new Date().toISOString(),
+      });
+      await sendAndLog(socket, to, threadId, "Confirma? Me responde com 'sim' ou 'nao'.");
+      return;
+    }
+  }
+
+  if (result.needs_confirmation && (result.action === "RUN_PLAN" || result.action === "RUN_SKILL")) {
+    if (result.action === "RUN_PLAN" && Array.isArray(result.plan)) {
         await setPending(threadId, {
           type: "RUN_PLAN",
           plan: result.plan,
