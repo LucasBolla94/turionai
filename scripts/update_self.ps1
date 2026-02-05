@@ -37,16 +37,8 @@ git fetch origin main
 git merge --ff-only origin/main
 
 if (Test-Path $EnvBackup) {
-  if (-not (Test-Path $EnvPath)) {
-    Copy-Item $EnvBackup $EnvPath -Force
-    Write-Output ".env restaurado do backup."
-  } else {
-    $content = Get-Content $EnvPath -Raw
-    if ($content -match '^XAI_API_KEY=$') {
-      Copy-Item $EnvBackup $EnvPath -Force
-      Write-Output ".env restaurado do backup (XAI_API_KEY vazio)."
-    }
-  }
+  Copy-Item $EnvBackup $EnvPath -Force
+  Write-Output ".env restaurado do backup (preservado)."
 }
 
 Write-Output "Atualizacao aplicada."

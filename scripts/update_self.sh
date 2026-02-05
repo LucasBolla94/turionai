@@ -53,15 +53,8 @@ git merge --ff-only origin/main
 npm install
 
 if [ -f "$ENV_BACKUP" ]; then
-  if [ ! -f ".env" ]; then
-    cp "$ENV_BACKUP" ".env"
-    echo ".env restaurado do backup."
-  else
-    if grep -q "^XAI_API_KEY=$" ".env" 2>/dev/null; then
-      cp "$ENV_BACKUP" ".env"
-      echo ".env restaurado do backup (XAI_API_KEY vazio)."
-    fi
-  fi
+  cp "$ENV_BACKUP" ".env"
+  echo ".env restaurado do backup (preservado)."
 fi
 
 echo "Atualizacao aplicada."
