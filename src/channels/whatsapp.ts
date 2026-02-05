@@ -2687,8 +2687,20 @@ async function maybeHandleEmailDeleteRequest(
   threadId: string,
   text: string,
 ): Promise<boolean> {
-  const snapshot = await loadEmailSnapshot();
-  const items = snapshot?.items ?? [];
+  let snapshot = await loadEmailSnapshot();
+  let items = snapshot?.items ?? [];
+  if (items.length === 0) {
+    const emailSkill = new EmailSkill();
+    const listResult = await emailSkill.execute(
+      { action: "list", limit: 30, unreadOnly: false, mode: "summary", suggestCleanup: false },
+      { platform: process.platform },
+    );
+    if (!listResult.ok) {
+      return false;
+    }
+    snapshot = await loadEmailSnapshot();
+    items = snapshot?.items ?? [];
+  }
   if (items.length === 0) return false;
   const resolved = resolveEmailDeleteTargets(text, items);
   if (!resolved) return false;
@@ -2752,6 +2764,16 @@ function resolveEmailDeleteTargets(
   if (ids.length > 0) {
     const matches = items.filter((item) => ids.includes(item.id));
     return { items: matches, needsPick: false };
+  }
+
+  const senderHint = extractSenderHint(normalized);
+  if (senderHint) {
+    const matches = items.filter((item) =>
+      `${item.sender} ${item.subject}`.toLowerCase().includes(senderHint),
+    );
+    if (matches.length > 0) {
+      return { items: matches, needsPick: matches.length > 1 && !mentionAll };
+    }
   }
 
   let base = items;
@@ -2841,9 +2863,16 @@ function matchItemsByKeyword(
   return scored.filter((entry) => entry.score === maxScore).map((entry) => entry.item);
 }
 
+function extractSenderHint(text: string): string | null {
+  const normalized = text.toLowerCase();
+  const match = normalized.match(/\b(do|da|de|from)\s+([a-z0-9@._-]{3,})/);
+  if (!match) return null;
+  return match[2];
+}
+
 function buildEmailDeletePrompt(items: Array<{ id: number; sender: string; subject: string }>): string {
   const lines = items.map(
-    (item, index) => `${index + 1}ï¸âƒ£ ${item.sender} â€” ${shortEmailSubject(item.subject)}`,
+    (item) => `#${item.id} ${item.sender} - ${shortEmailSubject(item.subject)}`,
   );
   const header =
     items.length === 1
