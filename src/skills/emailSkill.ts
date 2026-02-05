@@ -90,10 +90,17 @@ export class EmailSkill implements Skill {
         };
       }
 
+      const listCount = Math.min(limit, result.items.length);
+      const listIntroOptions = [
+        `Separei os **${listCount} e-mails n?o lidos mais recentes** pra voc?:`,
+        `Aqui est?o os **${listCount} n?o lidos mais recentes**:`,
+        `Peguei os **${listCount} primeiros n?o lidos** pra voc?:`,
+      ];
       const listLines =
         limit > 0 && result.items.length > 0
           ? [
-              `Separei os ${Math.min(limit, result.items.length)} primeiros n?o lidos:`,
+              listIntroOptions[Math.floor(Math.random() * listIntroOptions.length)],
+              "",
               ...result.items
                 .slice(0, Math.max(1, limit))
                 .map((mail, index) => formatEmailCompact(mail, index + 1, timeZone, rules)),
@@ -103,21 +110,38 @@ export class EmailSkill implements Skill {
 
       const importantBullets = important
         .slice(0, 2)
-        .map((mail) => `• ${simplifySender(mail.from)} — ${shortSubject(mail.subject)}`);
+        .map((mail) => `? ${simplifySender(mail.from)} ? ${shortSubject(mail.subject)}`);
+
+      const reviewIntro = [
+        "Dei uma olhada r?pida nos seus e-mails.",
+        "Fiz uma passada r?pida no inbox.",
+        "Olhei seus e-mails rapidinho.",
+      ];
+      const attentionIntro = [
+        "Dois realmente merecem aten??o:",
+        "Tem dois que chamam aten??o:",
+        "Achei dois que valem sua aten??o:",
+      ];
+      const generalOther = [
+        "Os demais s?o notifica??es, newsletters ou promo??es.",
+        "O resto ? notifica??o, newsletter ou promo.",
+        "O restante ? basicamente notifica??o e promo??es.",
+      ];
 
       const insight = importantBullets.length
         ? [
-            "📬 Dei uma olhada nos seus e-mails agora.",
+            reviewIntro[Math.floor(Math.random() * reviewIntro.length)],
             "",
-            `Tem ${importantBullets.length} que merecem atenção 👀`,
+            attentionIntro[Math.floor(Math.random() * attentionIntro.length)],
             "",
             ...importantBullets,
             "",
-            "O resto são notificações e newsletters/promos.",
+            generalOther[Math.floor(Math.random() * generalOther.length)],
           ].join("\n")
         : [
-            "📬 Dei uma olhada nos seus e-mails agora.",
-            "Nada urgente por aqui. O resto são notificações e newsletters/promos.",
+            reviewIntro[Math.floor(Math.random() * reviewIntro.length)],
+            "Nada urgente por aqui.",
+            generalOther[Math.floor(Math.random() * generalOther.length)],
           ].join("\n");
 
       const more =
@@ -126,7 +150,7 @@ export class EmailSkill implements Skill {
           : "";
 
       const footer = [
-        "Quer que eu:",
+        "Como prefere seguir?",
         "1️⃣ Abra um desses importantes e te explique",
         "2️⃣ Veja se tem algo urgente",
         "3️⃣ Ignore só as promoções",
