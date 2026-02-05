@@ -6,17 +6,29 @@ interface InteractionState {
   lastJid?: string;
   lastSentDate?: string;
   lastInteractionAt?: string;
+  lastTopic?: string;
+  lastTopicAt?: string;
 }
 
 const INTERACTION_DIR = resolve("state", "memory");
 const INTERACTION_PATH = resolve(INTERACTION_DIR, "interaction.json");
 
 export async function recordInteraction(threadId: string, jid: string): Promise<void> {
+  const existing = await getInteractionState();
   const state: InteractionState = {
+    ...existing,
     lastThread: threadId,
     lastJid: jid,
     lastInteractionAt: new Date().toISOString(),
   };
+  await mkdir(INTERACTION_DIR, { recursive: true });
+  await writeFile(INTERACTION_PATH, JSON.stringify(state, null, 2), "utf8");
+}
+
+export async function setLastTopic(topic: string): Promise<void> {
+  const state = await getInteractionState();
+  state.lastTopic = topic;
+  state.lastTopicAt = new Date().toISOString();
   await mkdir(INTERACTION_DIR, { recursive: true });
   await writeFile(INTERACTION_PATH, JSON.stringify(state, null, 2), "utf8");
 }

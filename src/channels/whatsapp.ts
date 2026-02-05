@@ -56,7 +56,7 @@ import { addEmailRule, extractEmailDomain } from "../core/emailRules";
 import { loadEmailSnapshot } from "../core/emailSnapshot";
 import { applyFeedback, setBehaviorProfile, touchEmotionState } from "../core/behavior";
 import { polishReply, syncStyleFromBehavior } from "../core/ux/HumanReply";
-import { recordInteraction, getInteractionState, markCheckinSent } from "../core/interaction";
+import { recordInteraction, getInteractionState, markCheckinSent, setLastTopic } from "../core/interaction";
 import { updatePreferencesFromMessage } from "../core/preferences";
 import { ensurePairingCode, getOwnerState, setOwner, updateOwnerDetails } from "../core/owner";
 import { CAPABILITIES, HELP_SECTIONS } from "../config/capabilities";
@@ -648,6 +648,46 @@ export async function initWhatsApp(): Promise<WASocket> {
           const response = await buildApiStatusResponse();
           await sendAndLog(socket, from, threadId, response);
           continue;
+        }
+        const interaction = await getInteractionState();
+        if (parseRetryRequest(text) && interaction.lastTopic) {
+          if (interaction.lastTopic === "update_check") {
+            const checkScript =
+              process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
+            let status = "";
+            try {
+              status = await runScript(checkScript);
+            } catch {
+              status = "";
+            }
+            const decision = resolveUpdateCheck(status);
+            if (decision.kind === "available") {
+              await sendAndLog(socket, from, threadId, pickUpdateFoundMessage());
+              const updateScript =
+                process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
+              await executeUpdate(socket, from, threadId, updateScript);
+              continue;
+            }
+            if (decision.kind === "up_to_date") {
+              await sendAndLog(socket, from, threadId, "Ainda nao ha update novo por aqui.");
+              continue;
+            }
+            await sendAndLog(socket, from, threadId, decision.message ?? "Nao consegui checar agora.");
+            continue;
+          }
+          if (interaction.lastTopic === "model_update") {
+            await sendAndLog(socket, from, threadId, buildModelUpdateExplanation());
+            continue;
+          }
+          if (interaction.lastTopic === "email_list") {
+            const emailSkill = new EmailSkill();
+            const result = await emailSkill.execute(
+              { action: "list", limit: 10, unreadOnly: true },
+              { platform: process.platform },
+            );
+            await sendAndLog(socket, from, threadId, result.output);
+            continue;
+          }
         }
         const awaitingApiKey = pending?.type === "OWNER_SETUP" && pending.stage === "await_api_key";
         if (!awaitingApiKey) {
@@ -1475,6 +1515,7 @@ async function handleBrain(
           threadId,
           `Sim, estou conectada no seu email (${config.provider}). Quer que eu verifique novos emails?`,
         );
+        await setLastTopic("email_list");
       } else {
         await sendAndLog(
           socket,
@@ -1514,6 +1555,7 @@ async function handleBrain(
         items: promos.map((item) => ({ id: item.id, sender: item.sender, subject: item.subject })),
         createdAt: new Date().toISOString(),
       });
+      await setLastTopic("email_list");
       return;
     }
     const provider = parseEmailProvider(text);
@@ -1543,6 +1585,7 @@ async function handleBrain(
 
       if (parseModelUpdateQuestion(text)) {
         await sendAndLog(socket, to, threadId, buildModelUpdateExplanation());
+        await setLastTopic("model_update");
         return;
       }
 
@@ -1561,6 +1604,7 @@ async function handleBrain(
         const updateScript =
           process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
         await executeUpdate(socket, to, threadId, updateScript);
+        await setLastTopic("update_check");
         return;
       }
       if (decision.kind === "up_to_date") {
@@ -1570,13 +1614,16 @@ async function handleBrain(
           threadId,
           "Chequei de novo e continua tudo atualizado por aqui.",
         );
+        await setLastTopic("update_check");
         return;
       }
       if (decision.kind === "error") {
         await sendAndLog(socket, to, threadId, decision.message ?? "Nao consegui checar agora.");
+        await setLastTopic("update_check");
         return;
       }
       await sendAndLog(socket, to, threadId, "Nao consegui checar agora.");
+      await setLastTopic("update_check");
       return;
     }
 
@@ -1595,6 +1642,7 @@ async function handleBrain(
         const updateScript =
           process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
         await executeUpdate(socket, to, threadId, updateScript);
+        await setLastTopic("update_check");
         return;
       }
       if (decision.kind === "up_to_date") {
@@ -1604,13 +1652,16 @@ async function handleBrain(
           threadId,
           "Por aqui ta tudo em dia e funcionando certinho. Se quiser, posso checar de novo quando voce quiser.",
         );
+        await setLastTopic("update_check");
         return;
       }
       if (decision.kind === "error") {
         await sendAndLog(socket, to, threadId, decision.message ?? "Nao consegui validar o status agora.");
+        await setLastTopic("update_check");
         return;
       }
       await sendAndLog(socket, to, threadId, "Nao consegui validar o status agora.");
+      await setLastTopic("update_check");
       return;
     }
 
@@ -1629,6 +1680,7 @@ async function handleBrain(
         const updateScript =
           process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
         await executeUpdate(socket, to, threadId, updateScript);
+        await setLastTopic("update_check");
         return;
       }
       if (decision.kind === "up_to_date") {
@@ -1638,13 +1690,16 @@ async function handleBrain(
           threadId,
           "Nao achei update novo agora. Se quiser, posso checar de novo.",
         );
+        await setLastTopic("update_check");
         return;
       }
       if (decision.kind === "error") {
         await sendAndLog(socket, to, threadId, decision.message ?? "Nao consegui checar o status agora.");
+        await setLastTopic("update_check");
         return;
       }
       await sendAndLog(socket, to, threadId, "Nao consegui checar o status agora.");
+      await setLastTopic("update_check");
       return;
     }
 
@@ -2307,6 +2362,19 @@ function parseEmailPromoRequest(text: string): boolean {
     normalized.includes("lista") ||
     normalized.includes("listar");
   return hasPromo && (hasAsk || normalized.length < 20);
+}
+
+function parseRetryRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized.includes("de novo") ||
+    normalized.includes("novamente") ||
+    normalized.includes("procura") ||
+    normalized.includes("procure") ||
+    normalized.includes("checa de novo") ||
+    normalized.includes("checar de novo")
+  );
 }
 
 function extractEmail(text: string): string | null {
