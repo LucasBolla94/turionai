@@ -86,6 +86,11 @@ function isLikelyXaiKey(value: string): boolean {
   return /^xai-[A-Za-z0-9]{20,}$/.test(value.trim());
 }
 
+function extractAnthropicKey(text: string): string | null {
+  const match = text.match(/sk-ant-[A-Za-z0-9-_]{10,}/);
+  return match ? match[0] : null;
+}
+
 function isLikelyAnthropicKey(value: string): boolean {
   return /^sk-ant-[A-Za-z0-9-_]{10,}$/.test(value.trim());
 }
@@ -693,13 +698,15 @@ export async function initWhatsApp(): Promise<WASocket> {
             continue;
           }
           if (interaction.lastTopic === "email_list") {
-            const emailSkill = new EmailSkill();
-            const result = await emailSkill.execute(
-              { action: "list", limit: 10, unreadOnly: true },
-              { platform: process.platform },
-            );
-            await sendAndLog(socket, from, threadId, result.output);
-            continue;
+            if (isEmailListFollowup(text)) {
+              const emailSkill = new EmailSkill();
+              const result = await emailSkill.execute(
+                { action: "list", limit: 10, unreadOnly: true },
+                { platform: process.platform },
+              );
+              await sendAndLog(socket, from, threadId, result.output);
+              continue;
+            }
           }
         }
         const awaitingApiKey =
@@ -2396,6 +2403,24 @@ function parseRetryRequest(text: string): boolean {
   );
 }
 
+function isEmailListFollowup(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  const hasEmail =
+    normalized.includes("email") ||
+    normalized.includes("e-mail") ||
+    normalized.includes("inbox") ||
+    normalized.includes("caixa");
+  const hasMore =
+    normalized.includes("mais") ||
+    normalized.includes("outros") ||
+    normalized.includes("mostrar") ||
+    normalized.includes("mostra") ||
+    normalized.includes("listar") ||
+    normalized.includes("lista");
+  return hasMore && (hasEmail || normalized.includes("mais"));
+}
+
 function extractEmail(text: string): string | null {
   const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
   return match ? match[0] : null;
@@ -3340,7 +3365,7 @@ async function handleStandaloneAnthropicKey(
   threadId: string,
   text: string,
 ): Promise<boolean> {
-  const value = text.trim();
+  const value = extractAnthropicKey(text) ?? text.trim();
   const sendSetup = (msg: string) => sendAndLog(socket, to, threadId, msg, { polish: false });
   if (!isLikelyAnthropicKey(value)) {
     return false;

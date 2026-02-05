@@ -117,7 +117,7 @@ async function buildReplyWithAnthropic(input: string, result: BrainResult): Prom
 }
 
 function decorateReply(reply: string, provider: "anthropic" | "grok"): string {
-  const marker = provider === "anthropic" ? "??" : "??";
+  const marker = provider === "anthropic" ? "🐺" : "🅣";
   const cleaned = reply.trim();
   if (!cleaned) return cleaned;
   return `${marker} ${cleaned}`;
