@@ -1,34 +1,34 @@
-# BrainMap – Tur (Turion)
+# BrainMap  Tur (Turion)
 
-Este documento descreve **o que o Tur faz**, como o sistema está organizado e **onde cada parte vive no código**. A ideia é ser simples de ler, mas sem perder detalhes importantes para manutenção futura.
+Este documento descreve **o que o Tur faz**, como o sistema est organizado e **onde cada parte vive no cdigo**. A ideia  ser simples de ler, mas sem perder detalhes importantes para manuteno futura.
 
-## 1) Visão geral (o que o Tur é)
-Tur é um assistente pessoal via WhatsApp, com arquitetura segura e auditável:
+## 1) Viso geral (o que o Tur )
+Tur  um assistente pessoal via WhatsApp, com arquitetura segura e auditvel:
 - **WhatsApp** como canal principal (Baileys)
-- **Cérebro (Grok)** apenas interpreta e sugere intenções/ações (nunca executa comandos)
+- **Crebro (Grok)** apenas interpreta e sugere intenes/aes (nunca executa comandos)
 - **Executor** roda scripts permitidos, com lista fixa
-- **Memória** em JSON (fatos, decisões, projetos, tarefas)
+- **Memria** em JSON (fatos, decises, projetos, tarefas)
 - **Auditoria** e **conversas** registradas em disco
 
 Fluxo base:
 ```
-Mensagem ? Pipeline ? (Grok JSON) ? Validação ? Skill/Executor ? Log + Memória
+Mensagem ? Pipeline ? (Grok JSON) ? Validao ? Skill/Executor ? Log + Memria
 ```
 
 ## 2) O que o Tur sabe fazer hoje
-### Ações principais
-- **Responder mensagens** com tom humano (ajustado pelo usuário)
+### Aes principais
+- **Responder mensagens** com tom humano (ajustado pelo usurio)
 - **Human UX Engine**: polimento de resposta com IA + templates (varia sem repetir)
 - **Executar comandos permitidos** (`--status`, `run`, `logs`, `deploy`, `redeploy` etc.)
 - **Checar e resumir logs**
 - **CRON** (lembretes e tarefas programadas)
-- **Atualizar o próprio código** com `--update`
+- **Atualizar o prprio cdigo** com `--update`
 - **Checar status das APIs** (Grok, Email, WhatsApp)
 - **Email (Gmail/iCloud)**: listar, ler, explicar, responder e apagar
-- **Memória inteligente**: lembrar fatos, decisões e projetos
-- **Onboarding humanizado** (primeira configuração)
+- **Memria inteligente**: lembrar fatos, decises e projetos
+- **Onboarding humanizado** (primeira configurao)
 
-### Exemplos de comandos úteis
+### Exemplos de comandos teis
 - `--status`
 - `list scripts`
 - `run <script>`
@@ -42,21 +42,21 @@ Mensagem ? Pipeline ? (Grok JSON) ? Validação ? Skill/Executor ? Log + Memória
 - `email delete <id>`
 - `--update`
 
-## 3) Arquitetura por módulos
+## 3) Arquitetura por mdulos
 ### 3.1 WhatsApp (entrada principal)
 Arquivo: `src/channels/whatsapp.ts`
-Responsável por:
+Responsvel por:
 - Conectar no WhatsApp
 - Gerar e mostrar QR
 - Reconectar em falhas
 - Processar mensagens
 - Chamar pipeline + brain + skills
 
-### 3.2 Cérebro (Grok)
+### 3.2 Crebro (Grok)
 Arquivo: `src/core/brain.ts`
 - Faz chamadas ao Grok via API
 - Espera JSON estrito
-- Interpreta intenção, risco e ações
+- Interpreta inteno, risco e aes
 ### 3.2.1 Human UX Engine
 Arquivos: `src/core/ux/HumanReply.ts`, `scripts/human_reply_templates.json`, `state/persona/human_reply_state.json`
 - Polimento de resposta com IA (quando chave configurada)
@@ -69,22 +69,22 @@ Arquivo: `src/core/messagePipeline.ts`
 
 ### 3.4 Executor (scripts permitidos)
 Arquivo: `src/executor/executor.ts`
-- Roda scripts do diretório `scripts/`
-- Bloqueia execução fora da whitelist
+- Roda scripts do diretrio `scripts/`
+- Bloqueia execuo fora da whitelist
 
 ### 3.5 Skills
-Diretório: `src/skills/`
+Diretrio: `src/skills/`
 - Cada funcionalidade real vira uma Skill
-- Skills são executadas pelo `PlanRunner`
+- Skills so executadas pelo `PlanRunner`
 
 ### 3.6 Plano (RUN_PLAN)
 Arquivo: `src/core/planRunner.ts`
-- Executa múltiplas skills em sequência
-- Auditável e seguro
+- Executa mltiplas skills em sequncia
+- Auditvel e seguro
 
-### 3.7 Memória
+### 3.7 Memria
 Arquivo: `src/core/memoryStore.ts`
-- Guarda fatos, decisões, tarefas, projetos
+- Guarda fatos, decises, tarefas, projetos
 - Index por keyword
 - **Formato JSON**:
 ```
@@ -121,46 +121,69 @@ Notas:
 Arquivo: `src/core/timezone.ts`
 - Valida timezone
 - Normaliza entradas
-- Inferência por cidade/país
-
-### 3.11 Update automático
+### 3.11 Update automatico
 Arquivos:
 - `scripts/update_self.sh`
 - `scripts/update_check.sh`
 - `src/core/updateStatus.ts`
 - `src/channels/whatsapp.ts`
 
-Cron automático checa updates a cada 5 minutos.
-O cron de update é tratado como essencial: na inicialização ele é validado,
-recriado se faltar e normalizado para evitar duplicação.
-Quando o usuário pergunta sobre update do modelo (Grok), o bot explica que é um serviço externo e mostra o modelo configurado.
+Cron automatico checa updates a cada 5 minutos.
+O cron de update e tratado como essencial: na inicializacao ele e validado,
+recriado se faltar e normalizado para evitar duplicacao.
+Quando o usuario pergunta sobre update do modelo (Grok), o bot explica que e um servico externo e mostra o modelo configurado.
+
+- Inferncia por cidade/pas
+
+### 3.12 Auto-fix (erros)
+Arquivos:
+- src/channels/whatsapp.ts
+
+Comportamento:
+- Detecta erros e tenta corrigir automaticamente (logs locais + diagnostico com IA).
+- Para ENOENT em /logs, cria pasta e arquivo base.
+- Executa passos seguros sugeridos quando ha diagnostico.
+
+### 3.13 Atualizacao de APIs via conversa
+Arquivos:
+- src/channels/whatsapp.ts
+
+Comportamento:
+- Detecta blocos de variaveis (KEY=VAL) com allowlist.
+- Atualiza .env e process.env automaticamente.
+- Revalida status das APIs em seguida.
+
+Cron automtico checa updates a cada 5 minutos.
+O cron de update  tratado como essencial: na inicializao ele  validado,
+recriado se faltar e normalizado para evitar duplicao.
+Quando o usurio pergunta sobre update do modelo (Grok), o bot explica que  um servio externo e mostra o modelo configurado.
 
 ## 4) Arquivos importantes
 - `docker-compose.yml` ? container principal
 - `scripts/` ? scripts permitidos
 - `state/` ? tudo que o Tur salva
 
-## 5) Logs e Diagnóstico
+## 5) Logs e Diagnstico
 - `docker compose logs -f`
-- `logs/` e `state/` são persistidos no host
+- `logs/` e `state/` so persistidos no host
 
-## 6) Segurança
-- Grok **não executa comandos**
+## 6) Segurana
+- Grok **no executa comandos**
 - Apenas scripts whitelisted podem rodar
-- Memória é auditável e transparente
+- Memria  auditvel e transparente
 
-## 7) Pós-setup e Capacidades
+## 7) Ps-setup e Capacidades
 Arquivo: `src/config/capabilities.ts`
 - Lista de exemplos que o Tur usa para explicar o que sabe fazer
 
 
-### 3.12 Supabase Governance
+### 3.14 Supabase Governance
 Arquivos: src/core/supabaseClient.ts, src/core/supabaseDb.ts, src/core/supabaseGovernance.ts`r
 - Client seguro com service_role
 - SQL com guardrails (bloqueia destrutivo)
 - Storage: listar/criar buckets
 
-### 3.13 Auto-Estudo Silencioso
+### 3.15 Auto-Estudo Silencioso
 Arquivos: src/core/idleDetector.ts, src/core/studyEngine.ts`r
 - Roda apenas em ociosidade (CPU/mem/atividade)
 - Limite diario de palavras
@@ -176,12 +199,12 @@ Arquivos: src/core/idleDetector.ts, src/core/studyEngine.ts`r
 ---
 
 ### TL;DR
-Tur é um assistente pessoal humano, seguro e auditável, com:
+Tur  um assistente pessoal humano, seguro e auditvel, com:
 - WhatsApp + Grok
 - Skills e scripts controlados
-- Memória persistente
-- Onboarding amigável
-- Atualizações automáticas
+- Memria persistente
+- Onboarding amigvel
+- Atualizaes automticas
 
 ## 9) Ajustes recentes (cron/lembretes)
 Arquivos:

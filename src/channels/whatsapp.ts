@@ -210,6 +210,146 @@ function parseLocation(value: string): { city: string; country?: string } {
   return { city: cleaned };
 }
 
+const ALLOWED_ENV_KEYS = new Set([
+  "XAI_API_KEY",
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "SUPABASE_DB_PASSWORD",
+  "TURION_XAI_MODEL",
+]);
+
+function extractEnvUpdates(text: string): Record<string, string> {
+  const updates: Record<string, string> = {};
+  const lines = text.split(/\r?\n/);
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || !line.includes("=")) continue;
+    const [key, ...rest] = line.split("=");
+    const envKey = key.trim();
+    if (!ALLOWED_ENV_KEYS.has(envKey)) continue;
+    const value = rest.join("=").trim();
+    if (!value) continue;
+    updates[envKey] = value;
+  }
+  return updates;
+}
+
+function isEnvUpdateRequest(text: string): boolean {
+  const normalized = text.toLowerCase();
+  if (!normalized.includes("=")) return false;
+  if (/(adicione|adicionar|adiciona|coloca|coloque|preencha|seta|setar|add)/.test(normalized)) {
+    return true;
+  }
+  return Object.keys(extractEnvUpdates(text)).length > 0;
+}
+
+function validateEnvValue(key: string, value: string): string | null {
+  if (!value.trim()) return "valor vazio";
+  if (key === "SUPABASE_URL" && !/^https?:\/\//i.test(value)) {
+    return "SUPABASE_URL invalida (use https://...)";
+  }
+  if (key === "XAI_API_KEY" && !value.startsWith("xai-")) {
+    return "XAI_API_KEY invalida (deve comecar com xai-)";
+  }
+  return null;
+}
+
+async function applyEnvUpdates(
+  updates: Record<string, string>,
+): Promise<{ applied: string[]; errors: string[] }> {
+  const applied: string[] = [];
+  const errors: string[] = [];
+  for (const [key, value] of Object.entries(updates)) {
+    const error = validateEnvValue(key, value);
+    if (error) {
+      errors.push(`${key}: ${error}`);
+      continue;
+    }
+    await saveEnvValue(key, value);
+    process.env[key] = value;
+    applied.push(key);
+  }
+  return { applied, errors };
+}
+
+async function readLocalLogSnippet(): Promise<string> {
+  const { readFile } = await import("node:fs/promises");
+  const candidates = [resolve("logs", "error.log"), resolve("logs", "app.log"), resolve("logs", "turion.log")];
+  for (const path of candidates) {
+    try {
+      const data = await readFile(path, "utf8");
+      if (data.trim()) {
+        return data.slice(-4000);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return "";
+}
+
+async function attemptAutoFix(
+  socket: WASocket,
+  to: string,
+  threadId: string,
+  errorMessage: string,
+): Promise<boolean> {
+  const cleaned = errorMessage.trim();
+  if (!cleaned) return false;
+  await sendAndLog(
+    socket,
+    to,
+    threadId,
+    `Deu um erro em ${cleaned}. Vou arrumar fazendo: ler logs, interpretar e aplicar correcoes seguras.`,
+  );
+
+  if (/ENOENT/.test(cleaned) && /logs/i.test(cleaned)) {
+    try {
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      await mkdir(resolve("logs"), { recursive: true });
+      await writeFile(resolve("logs", "error.log"), "", { flag: "a" });
+      await sendAndLog(socket, to, threadId, "Fazendo... criei a pasta de logs e o arquivo base.");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "falha ao criar logs";
+      await sendAndLog(socket, to, threadId, `Nao consegui corrigir automaticamente: ${message}`);
+      return true;
+    }
+  }
+
+  const logs = await readLocalLogSnippet();
+  if (!logs || !process.env.XAI_API_KEY) {
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "Agora vou precisar que voce me ajude: nao encontrei logs locais ou falta a chave da IA.",
+    );
+    return true;
+  }
+
+  await sendAndLog(socket, to, threadId, "Fazendo... analisando logs com IA.");
+  const diagnosis = await diagnoseLogs(logs).catch(() => null);
+  if (!diagnosis) {
+    await sendAndLog(socket, to, threadId, "Nao consegui interpretar os logs agora. Posso tentar de novo?");
+    return true;
+  }
+  if (!diagnosis.safe_next_steps?.length) {
+    await sendAndLog(socket, to, threadId, `Diagnostico: ${diagnosis.summary}. Quer que eu tente outra coisa?`);
+    return true;
+  }
+  await sendAndLog(socket, to, threadId, "Agora vou fazer os passos seguros sugeridos.");
+  for (const step of diagnosis.safe_next_steps) {
+    const skill = findSkillByIntent(step.skill.toUpperCase());
+    if (!skill) {
+      await sendAndLog(socket, to, threadId, `Passo ignorado (skill nao encontrada): ${step.skill}`);
+      continue;
+    }
+    await skill.execute(step.args ?? {}, { platform: process.platform });
+  }
+  await sendAndLog(socket, to, threadId, "Pronto. Apliquei os passos seguros. Quer que eu rode um status?");
+  return true;
+}
 function extractQuotedText(message: any): string | null {
   const quoted =
     message?.message?.extendedTextMessage?.contextInfo?.quotedMessage ??
@@ -567,6 +707,32 @@ export async function initWhatsApp(): Promise<WASocket> {
       if (pending && pending.type === "EMAIL_CONNECT_FLOW") {
         const handled = await handlePendingEmailConnect(socket, from, threadId, pending, text);
         if (handled) {
+          continue;
+        }
+      }
+      if (ownerJid && isEnvUpdateRequest(text)) {
+        const updates = extractEnvUpdates(text);
+        if (Object.keys(updates).length > 0) {
+          await sendAndLog(socket, from, threadId, "Boa, peguei as credenciais. Vou adicionar no .env agora.");
+          const result = await applyEnvUpdates(updates);
+          if (result.errors.length > 0) {
+            await sendAndLog(
+              socket,
+              from,
+              threadId,
+              `Deu um erro em alguns valores:\n- ${result.errors.join("\n- ")}\nVou precisar que voce confirme.`,
+            );
+          }
+          if (result.applied.length > 0) {
+            await sendAndLog(
+              socket,
+              from,
+              threadId,
+              `Fazendo... adicionei: ${result.applied.join(", ")}.`,
+            );
+            const status = await buildApiStatusResponse();
+            await sendAndLog(socket, from, threadId, status);
+          }
           continue;
         }
       }
@@ -1702,6 +1868,7 @@ async function handleBrain(
       const skill = findSkillByIntent(result.intent);
       if (!skill) {
         await socket.sendMessage(to, { text: "Skill não encontrada." });
+        await attemptAutoFix(socket, to, threadId, "Skill não encontrada");
         return;
       }
       const outcome = await skill.execute(result.args ?? {}, { platform: process.platform });
@@ -1725,6 +1892,7 @@ async function handleBrain(
     const message =
       error instanceof Error ? error.message : "Falha no interpretador.";
     await sendAndLog(socket, to, threadId, `Erro IA: ${message}`);
+    await attemptAutoFix(socket, to, threadId, message);
   }
 }
 
@@ -2486,25 +2654,6 @@ async function maybeHandleEmailDeleteRequest(
     createdAt: new Date().toISOString(),
   });
 
-  registerCronHandler("update_check", async () => {
-    const state = await getInteractionState();
-    const lastJid = state.lastJid;
-    if (!lastJid) return;
-    if (await hasUpdatePending()) return;
-    const checkScript =
-      process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
-    let status = "";
-    try {
-      status = await runScript(checkScript);
-    } catch {
-      status = "";
-    }
-    if (!status.includes("UPDATE_AVAILABLE")) return;
-    const updateScript =
-      process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
-    await sendAndLog(socket, lastJid, lastJid.replace(/[^\w]/g, "_"), pickUpdateFoundMessage());
-    await executeUpdate(socket, lastJid, lastJid.replace(/[^\w]/g, "_"), updateScript);
-  });
   await sendAndLog(socket, to, threadId, buildEmailDeletePrompt(resolved.items));
   return true;
 }

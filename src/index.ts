@@ -2,6 +2,7 @@ import "./core/env";
 import { setInterval } from "node:timers";
 import { initWhatsApp } from "./channels/whatsapp";
 import { initCronManager } from "./core/cronManager";
+import { registerAutoUpdateHandler } from "./core/updateAuto";
 
 async function main(): Promise<void> {
   const startedAt = new Date().toISOString();
@@ -12,6 +13,8 @@ async function main(): Promise<void> {
   } catch (error) {
     console.error("[Turion] falha ao iniciar WhatsApp:", error);
   }
+
+  registerAutoUpdateHandler();
 
   initCronManager().catch((error) => {
     console.error("[Turion] falha ao iniciar CronManager:", error);
