@@ -181,7 +181,7 @@ function parseLocation(value: string): { city: string; country?: string } {
   const cleaned = value.trim().replace(/\s+/g, " ");
   if (cleaned.includes(" em ")) {
     const parts = cleaned.split(" em ");
-    const city = parts.at(-1)?.trim();
+    const city = parts[parts.length - 1]?.trim();
     if (city) {
       return { city };
     }
@@ -192,7 +192,7 @@ function parseLocation(value: string): { city: string; country?: string } {
   }
   const tokens = cleaned.split(" ");
   if (tokens.length >= 2) {
-    return { city: tokens.slice(0, -1).join(" "), country: tokens.at(-1) };
+    return { city: tokens.slice(0, -1).join(" "), country: tokens[tokens.length - 1] };
   }
   return { city: cleaned };
 }
@@ -2618,17 +2618,13 @@ async function handleOwnerSetup(
   text: string,
 ): Promise<boolean> {
   const value = text.trim();
+  const sendSetup = (msg: string) => sendAndLog(socket, to, threadId, msg, { polish: false });
   if (!value) return false;
   const owner = await getOwnerState();
 
   if (pending.stage === "await_api_key") {
     if (!value.startsWith("xai-")) {
-      await sendAndLog(
-        socket,
-        to,
-        threadId,
-        "Essa chave nao parece valida. Envie a XAI_API_KEY começando com xai-.",
-      );
+      await sendSetup("Essa chave nao parece valida. Envie a XAI_API_KEY comecando com xai-.");
       return true;
     }
     await saveEnvValue("XAI_API_KEY", value);
@@ -2639,7 +2635,7 @@ async function handleOwnerSetup(
       stage: "ask_name",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(socket, to, threadId, "Boa! Como voce prefere que eu te chame?"); /*__NOPOLISH__*/
+    await sendSetup("Boa! Como voce prefere que eu te chame?");
     return true;
   }
 
@@ -2653,12 +2649,7 @@ async function handleOwnerSetup(
       stage: "ask_context",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(
-      socket,
-      to,
-      threadId,
-      "Boa. No seu dia a dia, voce trabalha com o que? ou o que voce mais faz?", /*__NOPOLISH__*/
-    );
+    await sendSetup("Boa. No seu dia a dia, voce trabalha com o que? ou o que voce mais faz?");
     return true;
   }
 
@@ -2675,12 +2666,7 @@ async function handleOwnerSetup(
       stage: "ask_location",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(
-      socket,
-      to,
-      threadId,
-      "E voce ta em qual cidade hoje? (e pais, se puder)", /*__NOPOLISH__*/
-    );
+    await sendSetup("E voce ta em qual cidade hoje? (e pais, se puder)");
     return true;
   }
 
@@ -2713,12 +2699,7 @@ async function handleOwnerSetup(
       stage: "ask_location",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(
-      socket,
-      to,
-      threadId,
-      "E voce ta em qual cidade hoje? (e pais, se puder)", /*__NOPOLISH__*/
-    );
+    await sendSetup("E voce ta em qual cidade hoje? (e pais, se puder)");
     return true;
   }
 
@@ -2743,7 +2724,7 @@ async function handleOwnerSetup(
         stage: "ask_language",
         createdAt: new Date().toISOString(),
       });
-      await sendAndLog(socket, to, threadId, "E no dia a dia, prefere falar em portugues ou ingles?");
+      await sendSetup("E no dia a dia, prefere falar em portugues ou ingles?");
       return true;
     }
     await setPending(threadId, {
@@ -2751,12 +2732,7 @@ async function handleOwnerSetup(
       stage: "ask_timezone",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(
-      socket,
-      to,
-      threadId,
-      "So pra eu acertar seus horarios certinho: seu horario e o de Londres mesmo? (ex: Europe/London)",
-    );
+    await sendSetup("So pra eu acertar seus horarios certinho: seu horario e o de Londres mesmo? (ex: Europe/London)");
     return true;
   }
 
@@ -2773,12 +2749,7 @@ async function handleOwnerSetup(
       await updateOwnerDetails({ timezone: tz });
       await addMemoryItem("user_fact", `fuso horario: ${tz}`);
     } catch {
-      await sendAndLog(
-        socket,
-        to,
-        threadId,
-        "Nao consegui identificar seu horario. Ex: Europe/London ou America/Sao_Paulo.",
-      );
+      await sendSetup("Nao consegui identificar seu horario. Ex: Europe/London ou America/Sao_Paulo.");
       return true;
     }
     await setPending(threadId, {
@@ -2786,7 +2757,7 @@ async function handleOwnerSetup(
       stage: "ask_language",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(socket, to, threadId, "E no dia a dia, prefere falar em portugues ou ingles?");
+    await sendSetup("E no dia a dia, prefere falar em portugues ou ingles?");
     return true;
   }
 
@@ -2800,12 +2771,7 @@ async function handleOwnerSetup(
       stage: "ask_goal",
       createdAt: new Date().toISOString(),
     });
-    await sendAndLog(
-      socket,
-      to,
-      threadId,
-      "Na pratica, como voce quer que eu te ajude no dia a dia?",
-    );
+    await sendSetup("Na pratica, como voce quer que eu te ajude no dia a dia?");
     return true;
   }
 
@@ -2820,7 +2786,7 @@ async function handleOwnerSetup(
       createdAt: new Date().toISOString(),
     });
     const summary = buildOnboardingSummary(await getOwnerState());
-    await sendAndLog(socket, to, threadId, `${summary}\nAcertei?`);
+    await sendSetup(`${summary}\nAcertei?`);
     return true;
   }
 
@@ -2835,7 +2801,7 @@ async function handleOwnerSetup(
         buildPostSetupHelp(),
         "Se quiser, posso configurar algo agora.",
       ].join("\n");
-      await sendAndLog(socket, to, threadId, message);
+      await sendSetup(message);
       return true;
     }
     const decision = parseConfirmation(value);
@@ -2847,7 +2813,7 @@ async function handleOwnerSetup(
       await clearPending(threadId);
       const freshOwner = await getOwnerState();
       const name = freshOwner?.owner_name ?? "por aqui";
-      await sendAndLog(socket, to, threadId, buildPostSetupIntro(name));
+      await sendSetup(buildPostSetupIntro(name));
       return true;
     }
     const lower = value.toLowerCase();
@@ -2863,19 +2829,9 @@ async function handleOwnerSetup(
         stage: nextStage,
         createdAt: new Date().toISOString(),
       });
-      await sendAndLog(
-        socket,
-        to,
-        threadId,
-        "Beleza. Me diz o que voce quer ajustar primeiro.",
-      );
+      await sendSetup("Beleza. Me diz o que voce quer ajustar primeiro.");
     } else {
-      await sendAndLog(
-        socket,
-        to,
-        threadId,
-        "Se quiser ajustar algo, me diz: nome, cidade, idioma, tom ou objetivo.",
-      );
+      await sendSetup("Se quiser ajustar algo, me diz: nome, cidade, idioma, tom ou objetivo.");
     }
     return true;
   }
@@ -2912,13 +2868,14 @@ async function handleStandaloneApiKey(
   text: string,
 ): Promise<boolean> {
   const value = text.trim();
+  const sendSetup = (msg: string) => sendAndLog(socket, to, threadId, msg, { polish: false });
   if (!isLikelyXaiKey(value)) {
     return false;
   }
   await saveEnvValue("XAI_API_KEY", value);
   process.env.XAI_API_KEY = value;
   await addMemoryItem("decision", "XAI_API_KEY atualizada via WhatsApp");
-  await sendAndLog(socket, to, threadId, "Chave do Grok salva. Posso continuar?");
+  await sendSetup("Chave do Grok salva. Posso continuar?");
   return true;
 }
 
@@ -3031,9 +2988,15 @@ async function executeUpdate(
   await markUpdatePending(to);
   const output = await runScript(updateScript);
   const summary = parseUpdatedFiles(output);
-    await sendAndLog(socket, to, threadId, `${summary} Reiniciando... Ja volto.`);
+  await sendAndLog(socket, to, threadId, `${summary} Reiniciando... Ja volto.`, { polish: false });
   setTimeout(() => process.exit(0), 1000);
 }
+
+
+
+
+
+
 
 
 
