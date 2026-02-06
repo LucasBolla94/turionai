@@ -1,7 +1,18 @@
 /**
- * Brain Types - V1.1.1 STEP-02
+ * Brain Types - V1.1.1 STEP-02 + STEP-06
  * Interface definitions for brain orchestrator system
  */
+
+/**
+ * Action to be executed by Action Executor (STEP-06)
+ */
+export interface Action {
+  /** Action type (e.g., "cron.create", "email.send") */
+  type: string;
+
+  /** Action payload (specific to each action type) */
+  payload: any;
+}
 
 export interface IntentClassification {
   /** Identified intent (e.g., "list_emails", "create_reminder") */
@@ -45,10 +56,7 @@ export interface ProcessResult {
   response: string;
 
   /** Optional actions to execute */
-  actions?: Array<{
-    type: string;
-    payload: any;
-  }>;
+  actions?: Action[];
 
   /** Whether to save this interaction in memory */
   shouldSaveMemory?: boolean;

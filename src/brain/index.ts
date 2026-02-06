@@ -1,11 +1,12 @@
 /**
- * Brain Module - V1.1.1 STEP-02 + STEP-03 + STEP-04 + STEP-05
- * Exports for brain orchestrator, memory system, agents, and migration wrapper
+ * Brain Module - V1.1.1 STEP-02 + STEP-03 + STEP-04 + STEP-05 + STEP-06
+ * Exports for brain orchestrator, memory system, agents, migration wrapper, and action executor
  */
 
 export { BrainOrchestrator } from "./orchestrator";
 export { BaseAgent } from "./agents/baseAgent";
 export type {
+  Action,
   IntentClassification,
   ProcessRequest,
   ProcessResult,
@@ -23,3 +24,11 @@ export { ChatAgent, CronAgent } from "./agents";
 
 // Migration Wrapper (STEP-05)
 export { processBrainMessage, getBrainSystemStats, resetBrainSystem } from "./migrationWrapper";
+
+// Action Executor (STEP-06)
+export {
+  executeAction,
+  executeActions,
+  getActionExecutorStats,
+} from "./actionExecutor";
+export type { ActionExecutionResult } from "./actionExecutor";
