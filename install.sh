@@ -243,14 +243,69 @@ install_turion() {
 # ===== CONFIGURAÇÃO =====
 run_setup() {
     print_header
-    print_box "EXECUTANDO ASSISTENTE DE CONFIGURAÇÃO" "$CYAN"
+    print_box "CONFIGURAÇÃO AUTOMÁTICA" "$CYAN"
 
     echo ""
-    print_info "Iniciando wizard de configuração..."
-    echo ""
-    sleep 2
+    print_step "Gerando senha de acesso do proprietário..."
 
-    node setup-wizard.js
+    # Gerar senha de 8 números aleatória
+    OWNER_PASSWORD=$(shuf -i 10000000-99999999 -n 1 2>/dev/null || echo $((10000000 + RANDOM * RANDOM % 90000000)))
+
+    print_success "Senha gerada: ${BOLD}${YELLOW}${OWNER_PASSWORD}${NC}"
+    echo ""
+
+    print_step "Criando arquivo .env..."
+
+    # Criar .env básico se não existir
+    if [ ! -f .env ]; then
+        cat > .env << EOF
+# ============================================
+# Turion V1.1.1 - Environment Variables
+# ============================================
+
+# ===== SENHA DO PROPRIETÁRIO (IMPORTANTE!) =====
+# Use esta senha para autenticar como dono no WhatsApp
+TURION_OWNER_PASSWORD=${OWNER_PASSWORD}
+
+# ===== API KEYS (Configure antes de usar!) =====
+ANTHROPIC_API_KEY=
+XAI_API_KEY=
+OPENAI_API_KEY=
+
+# ===== FEATURE FLAGS (V1.1.1) =====
+TURION_USE_GATEWAY=true
+TURION_USE_ORCHESTRATOR=true
+TURION_USE_MEMORY=true
+TURION_AUTO_APPROVE=false
+
+# ===== GATEWAY CONFIG =====
+TURION_GATEWAY_DEDUPLICATION=true
+TURION_GATEWAY_TTL=300000
+
+# ===== CONFIGURAÇÕES GERAIS =====
+TURION_XAI_MODEL=grok-4-1-fast-reasoning
+TURION_ALLOWLIST=
+TURION_TIMEZONE=America/Sao_Paulo
+EOF
+        print_success "Arquivo .env criado!"
+    else
+        # Adicionar senha ao .env existente se não tiver
+        if ! grep -q "TURION_OWNER_PASSWORD" .env; then
+            echo "" >> .env
+            echo "# Senha do proprietário" >> .env
+            echo "TURION_OWNER_PASSWORD=${OWNER_PASSWORD}" >> .env
+            print_success "Senha adicionada ao .env existente!"
+        else
+            print_info ".env já existe e já tem senha configurada"
+        fi
+    fi
+
+    echo ""
+    print_warning "⚠️  IMPORTANTE: Configure suas API Keys no .env!"
+    print_info "   Edite o arquivo: nano $INSTALL_DIR/.env"
+    print_info "   Adicione pelo menos ANTHROPIC_API_KEY"
+    echo ""
+    sleep 3
 }
 
 # ===== PM2 CONFIGURATION =====
@@ -289,34 +344,89 @@ configure_pm2() {
     print_success "Auto-start configurado!"
 }
 
+# ===== CRIAR SCRIPT DE MONITORAMENTO =====
+create_watch_script() {
+    print_step "Criando script de monitoramento de QR Code..."
+
+    cat > watch-qr.sh << 'EOFSCRIPT'
+#!/bin/bash
+
+# Script para monitorar QR Code do WhatsApp em tempo real
+# Turion V1.1.1
+
+# Cores
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║          MONITOR DE QR CODE - TURION V1.1.1               ║${NC}"
+echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${YELLOW}Monitorando logs do PM2...${NC}"
+echo -e "${YELLOW}Quando o QR Code aparecer, escaneie com seu WhatsApp${NC}"
+echo ""
+echo -e "${GREEN}Pressione Ctrl+C para sair${NC}"
+echo ""
+echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Seguir logs do PM2 e filtrar para mostrar QR Codes
+pm2 logs turion --raw --lines 0 | grep --line-buffered -A 30 "QR"
+EOFSCRIPT
+
+    chmod +x watch-qr.sh
+    print_success "Script watch-qr.sh criado!"
+}
+
 # ===== FINALIZAÇÃO =====
 show_final_message() {
     print_header
     print_box "INSTALAÇÃO CONCLUÍDA! 🎉" "$GREEN"
 
+    # Ler senha do .env
+    OWNER_PASSWORD=$(grep TURION_OWNER_PASSWORD .env | cut -d'=' -f2)
+
     echo -e "${WHITE}✅ Turion foi instalado e iniciado com sucesso!${NC}"
+    echo ""
+    echo -e "${BOLD}${YELLOW}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}${YELLOW}║              SENHA DO PROPRIETÁRIO                        ║${NC}"
+    echo -e "${BOLD}${YELLOW}║                                                            ║${NC}"
+    echo -e "${BOLD}${YELLOW}║              ${WHITE}${OWNER_PASSWORD}${YELLOW}                                  ║${NC}"
+    echo -e "${BOLD}${YELLOW}║                                                            ║${NC}"
+    echo -e "${BOLD}${YELLOW}║  ⚠️  Guarde esta senha! Você vai usar no WhatsApp          ║${NC}"
+    echo -e "${BOLD}${YELLOW}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
     echo ""
     echo -e "${YELLOW}📌 Próximos passos:${NC}"
     echo ""
-    echo -e "${CYAN}1️⃣  Escanear QR Code do WhatsApp:${NC}"
-    echo -e "${DIM}   pm2 logs turion${NC}"
-    echo -e "${DIM}   (O QR Code aparecerá nos logs em ~10 segundos)${NC}"
+    echo -e "${CYAN}1️⃣  Configure suas API Keys:${NC}"
+    echo -e "${DIM}   cd $INSTALL_DIR${NC}"
+    echo -e "${DIM}   nano .env${NC}"
+    echo -e "${DIM}   (Adicione pelo menos ANTHROPIC_API_KEY)${NC}"
     echo ""
-    echo -e "${CYAN}2️⃣  Monitorar o sistema:${NC}"
-    echo -e "${DIM}   pm2 monit${NC}"
+    echo -e "${CYAN}2️⃣  Reinicie o Turion após configurar:${NC}"
+    echo -e "${DIM}   pm2 restart turion${NC}"
     echo ""
-    echo -e "${CYAN}3️⃣  Ver logs:${NC}"
-    echo -e "${DIM}   pm2 logs turion${NC}"
+    echo -e "${CYAN}3️⃣  Veja o QR Code do WhatsApp:${NC}"
+    echo -e "${DIM}   cd $INSTALL_DIR${NC}"
+    echo -e "${DIM}   ./watch-qr.sh${NC}"
     echo ""
-    echo -e "${CYAN}4️⃣  Comandos úteis:${NC}"
-    echo -e "${DIM}   pm2 restart turion  ${NC}# Reiniciar"
-    echo -e "${DIM}   pm2 stop turion     ${NC}# Parar"
-    echo -e "${DIM}   pm2 delete turion   ${NC}# Remover"
+    echo -e "${CYAN}4️⃣  Autentique-se como proprietário:${NC}"
+    echo -e "${DIM}   Após conectar WhatsApp, envie: ${BOLD}${YELLOW}${OWNER_PASSWORD}${NC}${DIM}${NC}"
+    echo -e "${DIM}   O Turion vai reconhecer você como dono!${NC}"
+    echo ""
+    echo -e "${CYAN}5️⃣  Comandos úteis:${NC}"
+    echo -e "${DIM}   pm2 logs turion      ${NC}# Ver logs"
+    echo -e "${DIM}   pm2 restart turion   ${NC}# Reiniciar"
+    echo -e "${DIM}   pm2 monit            ${NC}# Monitorar recursos"
     echo ""
     echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "${YELLOW}💡 Dica: O Turion reinicia automaticamente em caso de erro${NC}"
-    echo -e "${YELLOW}💡 Dica: Após reiniciar o servidor, o Turion inicia sozinho${NC}"
+    echo -e "${YELLOW}💡 O Turion reinicia automaticamente em caso de erro${NC}"
+    echo -e "${YELLOW}💡 Após reiniciar o servidor, o Turion inicia sozinho${NC}"
     echo ""
     echo -e "${CYAN}📚 Documentação: ${DIM}https://github.com/LucasBolla94/turionai${NC}"
     echo -e "${CYAN}🐛 Reportar bugs: ${DIM}https://github.com/LucasBolla94/turionai/issues${NC}"
@@ -335,12 +445,22 @@ main() {
     echo -e "${DIM}Será instalado em: ${INSTALL_DIR}${NC}"
     echo ""
 
-    read -p "$(echo -e ${YELLOW}"Deseja continuar? (S/n): "${NC})" -n 1 -r
-    echo ""
+    # Detectar se está sendo executado via pipe (curl | bash)
+    # Se stdin não é um terminal, pula confirmação
+    if [ -t 0 ]; then
+        # É um terminal interativo
+        read -p "$(echo -e ${YELLOW}"Deseja continuar? (S/n): "${NC})" -n 1 -r
+        echo ""
 
-    if [[ $REPLY =~ ^[Nn]$ ]]; then
-        print_info "Instalação cancelada"
-        exit 0
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            print_info "Instalação cancelada"
+            exit 0
+        fi
+    else
+        # Executando via pipe, continua automaticamente
+        echo -e "${GREEN}▶ Modo automático detectado. Continuando instalação...${NC}"
+        echo ""
+        sleep 2
     fi
 
     # Verificar dependências
@@ -373,6 +493,10 @@ main() {
     # Configurar PM2
     sleep 1
     configure_pm2
+
+    # Criar script de monitoramento
+    sleep 1
+    create_watch_script
 
     # Mensagem final
     sleep 1

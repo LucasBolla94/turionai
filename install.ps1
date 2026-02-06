@@ -241,14 +241,69 @@ function Install-Turion {
 # ===== CONFIGURAÇÃO =====
 function Start-Setup {
     Print-Header
-    Print-Box "EXECUTANDO ASSISTENTE DE CONFIGURAÇÃO" "Cyan"
+    Print-Box "CONFIGURAÇÃO AUTOMÁTICA" "Cyan"
 
     Write-Host ""
-    Print-Info "Iniciando wizard de configuração..."
-    Write-Host ""
-    Start-Sleep -Seconds 2
+    Print-Step "Gerando senha de acesso do proprietário..."
 
-    node setup-wizard.js
+    # Gerar senha de 8 números aleatória
+    $OwnerPassword = Get-Random -Minimum 10000000 -Maximum 99999999
+
+    Write-ColorOutput "✓ Senha gerada: $OwnerPassword" "Yellow"
+    Write-Host ""
+
+    Print-Step "Criando arquivo .env..."
+
+    # Criar .env básico se não existir
+    if (-not (Test-Path ".env")) {
+        $EnvContent = @"
+# ============================================
+# Turion V1.1.1 - Environment Variables
+# ============================================
+
+# ===== SENHA DO PROPRIETÁRIO (IMPORTANTE!) =====
+# Use esta senha para autenticar como dono no WhatsApp
+TURION_OWNER_PASSWORD=$OwnerPassword
+
+# ===== API KEYS (Configure antes de usar!) =====
+ANTHROPIC_API_KEY=
+XAI_API_KEY=
+OPENAI_API_KEY=
+
+# ===== FEATURE FLAGS (V1.1.1) =====
+TURION_USE_GATEWAY=true
+TURION_USE_ORCHESTRATOR=true
+TURION_USE_MEMORY=true
+TURION_AUTO_APPROVE=false
+
+# ===== GATEWAY CONFIG =====
+TURION_GATEWAY_DEDUPLICATION=true
+TURION_GATEWAY_TTL=300000
+
+# ===== CONFIGURAÇÕES GERAIS =====
+TURION_XAI_MODEL=grok-4-1-fast-reasoning
+TURION_ALLOWLIST=
+TURION_TIMEZONE=America/Sao_Paulo
+"@
+        $EnvContent | Out-File -FilePath ".env" -Encoding UTF8
+        Print-Success "Arquivo .env criado!"
+    } else {
+        # Adicionar senha ao .env existente se não tiver
+        $EnvContent = Get-Content ".env" -Raw
+        if ($EnvContent -notmatch "TURION_OWNER_PASSWORD") {
+            "`n# Senha do proprietário`nTURION_OWNER_PASSWORD=$OwnerPassword" | Add-Content ".env"
+            Print-Success "Senha adicionada ao .env existente!"
+        } else {
+            Print-Info ".env já existe e já tem senha configurada"
+        }
+    }
+
+    Write-Host ""
+    Print-Warning "⚠️  IMPORTANTE: Configure suas API Keys no .env!"
+    Print-Info "   Edite o arquivo: notepad $InstallDir\.env"
+    Print-Info "   Adicione pelo menos ANTHROPIC_API_KEY"
+    Write-Host ""
+    Start-Sleep -Seconds 3
 }
 
 # ===== PM2 CONFIGURATION =====
@@ -279,34 +334,78 @@ function Configure-PM2 {
     }
 }
 
+# ===== CRIAR SCRIPT DE MONITORAMENTO =====
+function New-WatchScript {
+    Print-Step "Criando script de monitoramento de QR Code..."
+
+    $WatchScriptContent = @'
+@echo off
+cls
+echo ╔════════════════════════════════════════════════════════════╗
+echo ║          MONITOR DE QR CODE - TURION V1.1.1               ║
+echo ╚════════════════════════════════════════════════════════════╝
+echo.
+echo Monitorando logs do PM2...
+echo Quando o QR Code aparecer, escaneie com seu WhatsApp
+echo.
+echo Pressione Ctrl+C para sair
+echo.
+echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo.
+
+pm2 logs turion --raw --lines 100
+'@
+
+    $WatchScriptContent | Out-File -FilePath "watch-qr.bat" -Encoding ASCII
+    Print-Success "Script watch-qr.bat criado!"
+}
+
 # ===== FINALIZAÇÃO =====
 function Show-FinalMessage {
     Print-Header
     Print-Box "INSTALAÇÃO CONCLUÍDA! 🎉" "Green"
 
+    # Ler senha do .env
+    $OwnerPassword = (Get-Content ".env" | Select-String "TURION_OWNER_PASSWORD").ToString().Split("=")[1]
+
     Write-ColorOutput "✅ Turion foi instalado e iniciado com sucesso!" "White"
+    Write-Host ""
+    Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+    Write-Host "║              SENHA DO PROPRIETÁRIO                        ║" -ForegroundColor Yellow
+    Write-Host "║                                                            ║" -ForegroundColor Yellow
+    Write-Host "║              $OwnerPassword                                  ║" -ForegroundColor White
+    Write-Host "║                                                            ║" -ForegroundColor Yellow
+    Write-Host "║  ⚠️  Guarde esta senha! Você vai usar no WhatsApp          ║" -ForegroundColor Yellow
+    Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+    Write-Host ""
     Write-Host ""
     Write-ColorOutput "📌 Próximos passos:" "Yellow"
     Write-Host ""
-    Write-ColorOutput "1️⃣  Escanear QR Code do WhatsApp:" "Cyan"
-    Write-ColorOutput "   pm2 logs turion" "DarkGray"
-    Write-ColorOutput "   (O QR Code aparecerá nos logs em ~10 segundos)" "DarkGray"
+    Write-ColorOutput "1️⃣  Configure suas API Keys:" "Cyan"
+    Write-ColorOutput "   cd $InstallDir" "DarkGray"
+    Write-ColorOutput "   notepad .env" "DarkGray"
+    Write-ColorOutput "   (Adicione pelo menos ANTHROPIC_API_KEY)" "DarkGray"
     Write-Host ""
-    Write-ColorOutput "2️⃣  Monitorar o sistema:" "Cyan"
-    Write-ColorOutput "   pm2 monit" "DarkGray"
+    Write-ColorOutput "2️⃣  Reinicie o Turion após configurar:" "Cyan"
+    Write-ColorOutput "   pm2 restart turion" "DarkGray"
     Write-Host ""
-    Write-ColorOutput "3️⃣  Ver logs:" "Cyan"
-    Write-ColorOutput "   pm2 logs turion" "DarkGray"
+    Write-ColorOutput "3️⃣  Veja o QR Code do WhatsApp:" "Cyan"
+    Write-ColorOutput "   cd $InstallDir" "DarkGray"
+    Write-ColorOutput "   .\watch-qr.bat" "DarkGray"
     Write-Host ""
-    Write-ColorOutput "4️⃣  Comandos úteis:" "Cyan"
-    Write-ColorOutput "   pm2 restart turion  # Reiniciar" "DarkGray"
-    Write-ColorOutput "   pm2 stop turion     # Parar" "DarkGray"
-    Write-ColorOutput "   pm2 delete turion   # Remover" "DarkGray"
+    Write-ColorOutput "4️⃣  Autentique-se como proprietário:" "Cyan"
+    Write-ColorOutput "   Após conectar WhatsApp, envie: $OwnerPassword" "Yellow"
+    Write-ColorOutput "   O Turion vai reconhecer você como dono!" "DarkGray"
+    Write-Host ""
+    Write-ColorOutput "5️⃣  Comandos úteis:" "Cyan"
+    Write-ColorOutput "   pm2 logs turion      # Ver logs" "DarkGray"
+    Write-ColorOutput "   pm2 restart turion   # Reiniciar" "DarkGray"
+    Write-ColorOutput "   pm2 monit            # Monitorar recursos" "DarkGray"
     Write-Host ""
     Write-ColorOutput "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" "DarkGray"
     Write-Host ""
-    Write-ColorOutput "💡 Dica: O Turion reinicia automaticamente em caso de erro" "Yellow"
-    Write-ColorOutput "💡 Dica: Após reiniciar o servidor, o Turion inicia sozinho" "Yellow"
+    Write-ColorOutput "💡 O Turion reinicia automaticamente em caso de erro" "Yellow"
+    Write-ColorOutput "💡 Após reiniciar o servidor, o Turion inicia sozinho" "Yellow"
     Write-Host ""
     Write-ColorOutput "📚 Documentação: https://github.com/LucasBolla94/turionai" "Cyan"
     Write-ColorOutput "🐛 Reportar bugs: https://github.com/LucasBolla94/turionai/issues" "Cyan"
@@ -325,11 +424,27 @@ function Main {
     Write-ColorOutput "Será instalado em: $InstallDir" "DarkGray"
     Write-Host ""
 
-    $Response = Read-Host "Deseja continuar? (S/n)"
+    # Detectar se está sendo executado via pipe (iwr | iex)
+    # Se KeyAvailable não existir ou gerar erro, assume modo não-interativo
+    try {
+        $IsInteractive = [Console]::KeyAvailable -or $true
+        if ($IsInteractive -and -not $env:TURION_AUTO_INSTALL) {
+            $Response = Read-Host "Deseja continuar? (S/n)"
 
-    if ($Response -match '^[Nn]$') {
-        Print-Info "Instalação cancelada"
-        exit 0
+            if ($Response -match '^[Nn]$') {
+                Print-Info "Instalação cancelada"
+                exit 0
+            }
+        } else {
+            Write-ColorOutput "▶ Modo automático detectado. Continuando instalação..." "Green"
+            Write-Host ""
+            Start-Sleep -Seconds 2
+        }
+    } catch {
+        # Modo não-interativo
+        Write-ColorOutput "▶ Modo automático detectado. Continuando instalação..." "Green"
+        Write-Host ""
+        Start-Sleep -Seconds 2
     }
 
     # Verificar dependências
@@ -362,6 +477,10 @@ function Main {
     # Configurar PM2
     Start-Sleep -Seconds 1
     Configure-PM2
+
+    # Criar script de monitoramento
+    Start-Sleep -Seconds 1
+    New-WatchScript
 
     # Mensagem final
     Start-Sleep -Seconds 1
