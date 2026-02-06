@@ -129,8 +129,8 @@ STEP-XX: Título do próximo step
 ## [STEP-01] Message Gateway Base
 **Data:** 2026-02-06
 **Branch:** feature/step-01-gateway
-**Commit:** ede50b5
-**Status:** ✅ Implementado (não testado)
+**Commit:** 43f5fd5
+**Status:** ✅ TESTADO E APROVADO
 
 ### O que foi feito
 Criada camada de abstração (Gateway) para receber e normalizar mensagens de múltiplos canais (WhatsApp, Telegram, Discord, etc). Sistema com deduplicação automática e arquitetura baseada em eventos.
@@ -210,11 +210,20 @@ TURION_GATEWAY_TTL=300000  # 5 minutos
 ```
 
 ### Testes realizados
-- ⏳ **Pendente:** Teste com mensagens reais WhatsApp
-- ⏳ **Pendente:** Validação de deduplicação
-- ⏳ **Pendente:** Teste de múltiplos adaptadores
+- ✅ **APROVADO:** Normalização de mensagens (texto, imagem, grupo)
+- ✅ **APROVADO:** Deduplicação funcionando corretamente
+- ✅ **APROVADO:** Envio de mensagens via adapter
+- ✅ **APROVADO:** Estatísticas do gateway
+- ✅ **APROVADO:** Cleanup automático
+- ✅ **APROVADO:** Todos os 6 testes standalone passaram
 
-**Script de teste standalone criado:**
+**Testado em:**
+- Data: 2026-02-06 02:41 UTC
+- Ambiente: VPS Ubuntu (Node.js + tsx)
+- Comando: `npx tsx src/test-gateway.ts`
+- Resultado: ✅ 100% sucesso (6/6 testes)
+
+**Script de teste standalone:**
 ```bash
 npx tsx src/test-gateway.ts
 ```
