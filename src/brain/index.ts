@@ -1,6 +1,6 @@
 /**
- * Brain Module - V1.1.1 STEP-02 + STEP-03 + STEP-04
- * Exports for brain orchestrator, memory system, and agents
+ * Brain Module - V1.1.1 STEP-02 + STEP-03 + STEP-04 + STEP-05
+ * Exports for brain orchestrator, memory system, agents, and migration wrapper
  */
 
 export { BrainOrchestrator } from "./orchestrator";
