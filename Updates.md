@@ -126,6 +126,241 @@ STEP-XX: Título do próximo step
 
 ---
 
+## [STEP-03] Memory System (3-Layer)
+**Data:** 2026-02-06
+**Branch:** feature/step-03-memory
+**Commit:** 5a04c44
+**Status:** ✅ TESTADO E APROVADO
+
+### O que foi feito
+Criado sistema de memória de 3 camadas (short-term, session, long-term) com persistência em JSON e busca por keywords. Sistema unificado que monta contexto para o orchestrator.
+
+### Arquivos criados
+- `src/brain/memory/shortTermMemory.ts` - Buffer circular em RAM (últimas 10 msgs)
+- `src/brain/memory/sessionMemory.ts` - Persistência de conversas por thread em JSON
+- `src/brain/memory/longTermMemory.ts` - Memória de longo prazo com busca por keywords
+- `src/brain/memory/memorySystem.ts` - Sistema unificado de 3 camadas (140 linhas)
+- `src/brain/memory/index.ts` - Exports do módulo
+- `src/test-memory.ts` - Script de teste com 5 cenários (141 linhas)
+- `test-memory.sh` - Helper Linux/Mac
+- `test-memory.ps1` - Helper Windows
+
+### Arquivos modificados
+- `src/brain/index.ts` - Adicionados exports de memória
+
+### Funções criadas
+
+#### ShortTermMemory
+**Propósito:** Buffer circular em RAM que mantém últimas N mensagens (padrão: 10).
+
+**Métodos:**
+- `add(message: string)` - Adiciona mensagem ao buffer
+- `get()` - Retorna todas as mensagens no buffer
+- `clear()` - Limpa o buffer
+- `size()` - Retorna número de mensagens
+
+**Exemplo:**
+```typescript
+const shortTerm = new ShortTermMemory(10);
+shortTerm.add("Mensagem 1");
+const messages = shortTerm.get(); // ["Mensagem 1"]
+```
+
+#### SessionMemory
+**Propósito:** Persiste conversas por thread em JSON com auto-save assíncrono.
+
+**Métodos:**
+- `async load()` - Carrega sessões do disco
+- `async save()` - Salva sessões no disco
+- `add(threadId, message)` - Adiciona mensagem à sessão (auto-save)
+- `get(threadId, last?)` - Retorna mensagens da sessão
+- `clear(threadId)` - Limpa sessão específica
+- `count()` - Retorna número de sessões
+- `size(threadId)` - Retorna número de mensagens na sessão
+
+**Persistência:** `state/memory/sessions.json`
+
+**Exemplo:**
+```typescript
+const session = new SessionMemory();
+await session.load();
+session.add("thread_123", "Olá!");
+const messages = session.get("thread_123", 20); // últimas 20
+```
+
+#### LongTermMemory
+**Propósito:** Armazena fatos/preferências com busca por keywords (limite: 1000 entradas).
+
+**Métodos:**
+- `async load()` - Carrega memórias do disco
+- `async save()` - Salva memórias no disco
+- `async add(entry)` - Adiciona entrada
+- `search(query, limit)` - Busca por keywords (scoring)
+- `count()` - Retorna número de entradas
+
+**Interface LongTermEntry:**
+```typescript
+{
+  id: string;
+  text: string;
+  timestamp: string;
+  userId: string;
+  category: "fact" | "task" | "conversation" | "preference";
+  keywords: string[];
+}
+```
+
+**Persistência:** `state/memory/longterm.json`
+
+**Exemplo:**
+```typescript
+const longTerm = new LongTermMemory();
+await longTerm.add({
+  text: "Fazer deploy do projeto api",
+  timestamp: new Date().toISOString(),
+  userId: "user_123",
+  category: "task",
+  keywords: ["deploy", "projeto", "api"]
+});
+
+const results = longTerm.search("api", 5);
+```
+
+#### MemorySystem
+**Propósito:** Sistema unificado que integra as 3 camadas e monta contexto para o orchestrator.
+
+**Métodos:**
+- `async initialize()` - Carrega memórias persistidas
+- `addMessage(threadId, message, isImportant)` - Adiciona em todas as camadas
+- `async buildContext(threadId, currentMessage)` - Monta contexto unificado
+- `getStats()` - Retorna estatísticas do sistema
+- `layers` - Acesso direto às 3 camadas (debug)
+
+**Exemplo de uso:**
+```typescript
+import { MemorySystem } from "./brain/memory";
+
+const memory = new MemorySystem();
+await memory.initialize();
+
+// Adicionar mensagem
+memory.addMessage("thread_123", "Usuário: Olá", false);
+memory.addMessage("thread_123", "Bot: Oi! Como posso ajudar?", false);
+
+// Mensagem importante vai para long-term
+memory.addMessage("thread_123", "Fazer deploy amanhã", true);
+
+// Montar contexto para orchestrator
+const context = await memory.buildContext("thread_123", "me fale sobre deploy");
+console.log(context);
+/* Saída:
+CONTEXTO RECENTE:
+Usuário: Olá
+Bot: Oi! Como posso ajudar?
+
+CONVERSA ATUAL:
+Usuário: Olá
+Bot: Oi! Como posso ajudar?
+Fazer deploy amanhã
+
+MEMÓRIAS RELEVANTES:
+1. [task] Fazer deploy amanhã (2026-02-06)
+*/
+```
+
+### Configuração (.env)
+Nenhuma variável de ambiente necessária (feature flag opcional para futuro).
+
+### Testes realizados
+**Status:** ✅ APROVADO
+
+**Resultados (5/5 testes passaram - 100%):**
+- ✅ TESTE 1: Buffer circular → Mantém apenas últimas 10 mensagens
+- ✅ TESTE 2: Session persistence → Salvou e recarregou 3 sessões corretamente
+- ✅ TESTE 3: Long-term search → Busca por keywords funcionando (api, joão, reunião)
+- ✅ TESTE 4: Context builder → 3 camadas unificadas corretamente
+- ✅ TESTE 5: Estatísticas → Contadores corretos (10 short, 4 sessions, 3 long-term)
+
+**Testado em:**
+- Data: 2026-02-06
+- Ambiente: VPS Ubuntu (Node.js + tsx)
+- Comando: `npx tsx src/test-memory.ts`
+- Resultado: ✅ 100% sucesso (5/5 testes)
+- Persistência: JSON em `state/memory/`
+
+**Observação:** Necessário criar diretório `state/memory/` com permissões de escrita no VPS.
+
+**Script de teste standalone:**
+```bash
+# Linux/Mac
+./test-memory.sh
+
+# Windows
+.\test-memory.ps1
+
+# Ou direto
+npx tsx src/test-memory.ts
+```
+
+### Breaking Changes
+❌ **Nenhum** - Novo módulo independente, não afeta código existente.
+
+### Como ativar
+Integrar com BrainOrchestrator (exemplo):
+
+```typescript
+import { BrainOrchestrator } from "./brain";
+import { MemorySystem } from "./brain/memory";
+
+const orchestrator = new BrainOrchestrator();
+const memory = new MemorySystem();
+await memory.initialize();
+
+// Ao processar mensagem
+const context = await memory.buildContext(request.threadId, request.message);
+const result = await orchestrator.process({
+  ...request,
+  context, // Contexto unificado das 3 camadas
+});
+
+// Salvar resposta importante
+if (result.shouldSaveMemory) {
+  memory.addMessage(request.threadId, result.response, true);
+}
+```
+
+### Rollback
+Se houver problemas:
+
+```bash
+# Reverter commit
+git revert 5a04c44
+
+# Ou voltar para main
+git checkout main
+git branch -D feature/step-03-memory
+
+# Remover arquivos de memória (se necessário)
+rm -rf state/memory/
+```
+
+### Métricas
+- **Linhas adicionadas:** ~560
+- **Linhas removidas:** 2
+- **Arquivos criados:** 9
+- **Arquivos modificados:** 1
+
+### Melhorias Futuras
+- Substituir busca por keywords por embeddings (semantic search)
+- Implementar RAG (Retrieval-Augmented Generation)
+- Adicionar compressão de sessões antigas
+- Suporte a múltiplos usuários com isolamento
+
+### Próximo Step
+STEP-04: Implementar agentes especializados (ChatAgent, EmailAgent, etc)
+
+---
+
 ## [STEP-02] Brain Orchestrator
 **Data:** 2026-02-06
 **Branch:** feature/step-02-orchestrator
