@@ -126,6 +126,299 @@ STEP-XX: Título do próximo step
 
 ---
 
+## [STEP-04] Specialized Agents (ChatAgent + CronAgent)
+**Data:** 2026-02-06
+**Branch:** feature/step-04-agents
+**Commit:** 1939336
+**Status:** ✅ TESTADO E APROVADO
+
+### O que foi feito
+Implementados primeiros agentes especializados (ChatAgent e CronAgent) com integração completa Claude Sonnet 4.5. Sistema de testes de integração validando todo o fluxo: Orchestrator → Agents → Memory.
+
+### Arquivos criados
+- `src/brain/agents/chatAgent.ts` - Agente de conversa casual com personalidade (85 linhas)
+- `src/brain/agents/cronAgent.ts` - Agente de lembretes/tarefas agendadas (100 linhas)
+- `src/brain/agents/index.ts` - Exports do módulo de agentes (12 linhas)
+- `src/test-integration.ts` - Suite de testes de integração completa (150 linhas)
+- `test-integration.sh` - Script helper para Linux/Mac
+- `test-integration.ps1` - Script helper para Windows
+
+### Arquivos modificados
+- `src/brain/index.ts` - Adicionados exports dos agentes especializados
+
+### Funções criadas
+
+#### ChatAgent
+**Propósito:** Agente especializado em conversas casuales, saudações e interações gerais. Possui personalidade definida (informal, direto, com emojis ocasionais).
+
+**Propriedades:**
+- `name = "chat"` - Identificador do agente
+- `description` - "Agente de conversa casual, saudações e interações gerais"
+
+**Métodos:**
+- `canHandle(intent: string): boolean` - Verifica se pode processar intent
+  - Aceita: "chat", "saudacao", "conversa", "casual", "oi", "ola", "bom dia", etc
+- `execute(params: AgentExecuteParams): Promise<AgentExecuteResult>` - Processa conversa
+
+**Personalidade:**
+- Informal mas respeitoso (usa "você", não "senhor/senhora")
+- Respostas curtas e objetivas (máximo 2-3 frases)
+- Emojis ocasionais quando apropriado
+- Prestativo e proativo
+- Sem formalidades desnecessárias
+
+**Exemplo de uso:**
+```typescript
+import { ChatAgent } from "./brain/agents";
+
+const agent = new ChatAgent();
+
+// Verificar se pode lidar com intent
+if (agent.canHandle("saudacao")) {
+  const result = await agent.execute({
+    message: "Oi! Tudo bem?",
+    userId: "user_123",
+    threadId: "thread_456",
+    args: {},
+    context: ""
+  });
+
+  console.log(result.response);
+  // Saída: "Oi! Tudo ótimo, obrigado! 😊\n\nE aí, como posso te ajudar hoje?"
+}
+```
+
+#### CronAgent
+**Propósito:** Agente especializado em criar lembretes, tarefas agendadas e alarmes. Extrai informações de tempo e gera actions executáveis.
+
+**Propriedades:**
+- `name = "cron"` - Identificador do agente
+- `description` - "Agente de lembretes e tarefas agendadas"
+
+**Métodos:**
+- `canHandle(intent: string): boolean` - Verifica se pode processar intent
+  - Aceita: "cron", "lembrete", "lembra", "agendar", "agenda", "reminder", "schedule", "timer", "alarme"
+- `execute(params: AgentExecuteParams): Promise<AgentExecuteResult>` - Cria lembrete
+
+**Funcionalidades:**
+- Extração de timing da mensagem (ex: "às 15h", "em 10min", "amanhã")
+- Geração de action `cron.create` com payload estruturado
+- Confirmação amigável ao usuário
+
+**Estrutura de Action:**
+```typescript
+{
+  type: "cron.create",
+  payload: {
+    message: string,    // Texto do lembrete
+    delay: string,      // Timing extraído (ex: "15h", "10min")
+    userId: string,     // ID do usuário
+    threadId: string    // ID da conversa
+  }
+}
+```
+
+**Exemplo de uso:**
+```typescript
+import { CronAgent } from "./brain/agents";
+
+const agent = new CronAgent();
+
+const result = await agent.execute({
+  message: "Me lembra de fazer deploy às 15h",
+  userId: "user_123",
+  threadId: "thread_456",
+  args: { message: "fazer deploy", time: "15h" },
+  context: ""
+});
+
+console.log(result.response);
+// Saída: "Fechado! Vou te lembrar de fazer deploy às 15h ⏰"
+
+console.log(result.actions);
+// Saída: [{
+//   type: "cron.create",
+//   payload: {
+//     message: "fazer deploy",
+//     delay: "15h",
+//     userId: "user_123",
+//     threadId: "thread_456"
+//   }
+// }]
+```
+
+#### Test Integration Suite
+**Propósito:** Suite completa de testes validando integração Orchestrator + Agents + Memory.
+
+**Testes incluídos:**
+1. **TESTE 1:** Saudação casual → ChatAgent
+2. **TESTE 2:** Criar lembrete → CronAgent com action
+3. **TESTE 3:** Conversa com contexto → Memory em uso
+4. **TESTE 4:** Estatísticas do sistema → Contadores
+
+**Como executar:**
+```bash
+# Linux/Mac
+./test-integration.sh
+
+# Windows
+.\test-integration.ps1
+
+# Ou direto
+npx tsx src/test-integration.ts
+```
+
+### Configuração (.env)
+```bash
+# API Key necessária
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Feature Flag (opcional)
+TURION_USE_AGENTS=true
+```
+
+### Testes realizados
+**Status:** ✅ APROVADO
+
+**Resultados (4/4 testes passaram - 100%):**
+- ✅ TESTE 1: Saudação casual (ChatAgent)
+  - Intent: saudacao_casual
+  - Confidence: 100%
+  - Resposta com personalidade e emoji
+  - Tempo: ~5.6s
+
+- ✅ TESTE 2: Criar lembrete (CronAgent)
+  - Intent: criar_lembrete_deploy
+  - Confidence: 92%
+  - Action gerada: `cron.create` com payload completo
+  - Tempo: ~8.7s
+
+- ✅ TESTE 3: Conversa com contexto (Memory)
+  - Intent: listar_lembretes_agendados
+  - Confidence: 85%
+  - **Memória funcionando:** Reconheceu lembrete criado no teste anterior
+  - Tempo: ~9.8s
+
+- ✅ TESTE 4: Estatísticas do sistema
+  - Orchestrator: 2 agentes registrados (chat, cron)
+  - Memory: 4 sessões, 4 entradas long-term
+  - Sistema completamente integrado
+
+**Testado em:**
+- Data: 2026-02-06
+- Ambiente Local: Windows 11 (Node.js + tsx)
+- Ambiente VPS: Ubuntu (Node.js + tsx)
+- Comando: `ANTHROPIC_API_KEY=... npx tsx src/test-integration.ts`
+- Resultado: ✅ 100% sucesso (4/4 testes)
+- Performance total: ~24s para todos os testes
+- Uso de memória: Funcional e persistente
+
+**Observações importantes:**
+- ChatAgent mostrou personalidade consistente com emojis apropriados
+- CronAgent extraiu timing corretamente e gerou action executável
+- Memory System funcionou perfeitamente: contexto anterior foi usado para responder sobre lembretes
+- Orchestrator roteou com alta confiança (85-100%)
+
+### Breaking Changes
+❌ **Nenhum** - Agentes são adicionais, não afetam código existente.
+
+### Como ativar
+Integração completa Orchestrator + Agents + Memory:
+
+```typescript
+import { BrainOrchestrator } from "./brain";
+import { ChatAgent, CronAgent } from "./brain/agents";
+import { MemorySystem } from "./brain/memory";
+
+// Criar componentes
+const orchestrator = new BrainOrchestrator();
+const memory = new MemorySystem();
+await memory.initialize();
+
+// Registrar agentes especializados
+orchestrator.registerAgent(new ChatAgent());
+orchestrator.registerAgent(new CronAgent());
+
+// Processar mensagem com contexto de memória
+async function handleMessage(message: string, userId: string, threadId: string) {
+  // Construir contexto das 3 camadas de memória
+  const context = await memory.buildContext(threadId, message);
+
+  // Processar via orchestrator
+  const result = await orchestrator.process({
+    message,
+    userId,
+    threadId,
+    channel: "whatsapp",
+    context
+  });
+
+  // Salvar na memória se necessário
+  if (result.shouldSaveMemory) {
+    const isImportant = result.actions && result.actions.length > 0;
+    memory.addMessage(threadId, `Usuário: ${message}`, isImportant);
+    memory.addMessage(threadId, `Bot: ${result.response}`, false);
+  }
+
+  // Executar actions (ex: criar lembrete)
+  if (result.actions) {
+    for (const action of result.actions) {
+      if (action.type === "cron.create") {
+        // Implementar execução do lembrete aqui
+        console.log("Criar lembrete:", action.payload);
+      }
+    }
+  }
+
+  return result.response;
+}
+
+// Exemplo de uso
+const response = await handleMessage(
+  "Me lembra de ligar pro João em 10min",
+  "user_123",
+  "thread_456"
+);
+console.log(response); // "Fechado! Vou te lembrar de ligar pro João em 10min ⏰"
+```
+
+### Rollback
+Se houver problemas:
+
+```bash
+# Reverter commit
+git revert 1939336
+
+# Ou voltar para main
+git checkout main
+git branch -D feature/step-04-agents
+
+# Desativar via feature flag
+TURION_USE_AGENTS=false
+```
+
+### Métricas
+- **Linhas adicionadas:** ~360
+- **Linhas removidas:** 2
+- **Arquivos criados:** 6
+- **Arquivos modificados:** 1
+- **Agentes implementados:** 2/6 (Chat, Cron)
+- **Agentes pendentes:** 4 (Email, Logs, Script, Git)
+
+### Melhorias Futuras
+- Implementar EmailAgent (listar, ler, responder emails)
+- Implementar LogsAgent (ler e analisar logs do sistema)
+- Implementar ScriptAgent (executar scripts com auto-aprovação)
+- Implementar GitAgent (commits, branches, PRs)
+- Adicionar testes unitários individuais por agente
+- Persistir actions em banco de dados para execução assíncrona
+- Sistema de retry para actions falhadas
+
+### Próximo Step
+STEP-05: Implementar mais agentes especializados (EmailAgent, LogsAgent, ScriptAgent, GitAgent)
+
+---
+
 ## [STEP-03] Memory System (3-Layer)
 **Data:** 2026-02-06
 **Branch:** feature/step-03-memory
@@ -782,8 +1075,10 @@ STEP-01: Message Gateway Base
 ## 📊 CHANGELOG RESUMIDO
 
 ### 2026-02-06
-- ✅ [STEP-02] Brain Orchestrator (testado e aprovado)
-- ✅ [STEP-01] Message Gateway Base (testado e aprovado)
+- ✅ [STEP-04] Specialized Agents (ChatAgent + CronAgent) - testado e aprovado
+- ✅ [STEP-03] Memory System (3-Layer) - testado e aprovado
+- ✅ [STEP-02] Brain Orchestrator - testado e aprovado
+- ✅ [STEP-01] Message Gateway Base - testado e aprovado
 - ✅ [STEP-00] Setup Inicial do Roadmap
 
 ---
@@ -804,10 +1099,15 @@ STEP-01: Message Gateway Base
 - `ProcessResult` - [STEP-02] Interface de resultado
 
 ### Memory System
-*Aguardando implementação*
+- `MemorySystem` - [STEP-03] Sistema unificado de 3 camadas
+- `ShortTermMemory` - [STEP-03] Buffer circular em RAM (últimas 10 msgs)
+- `SessionMemory` - [STEP-03] Persistência de conversas por thread
+- `LongTermMemory` - [STEP-03] Memória de longo prazo com busca por keywords
 
 ### Agents
-*Aguardando implementação*
+- `BaseAgent` - [STEP-02] Classe base abstrata para agentes
+- `ChatAgent` - [STEP-04] Agente de conversa casual com personalidade
+- `CronAgent` - [STEP-04] Agente de lembretes e tarefas agendadas
 
 ### Executors
 *Aguardando implementação*
@@ -854,33 +1154,33 @@ WhatsApp → whatsapp.ts (monolítico) → Skills/Executor
 └─────────────────────────────────────────────────┘
 ```
 
-**Status atual:** V1.0 (Legado)
-**Progresso V1.1.1:** 0% (0/28 steps)
+**Status atual:** V1.0 + V1.1.1 (Migração em progresso)
+**Progresso V1.1.1:** 14.3% (4/28 steps)
 
 ---
 
 ## 📈 ESTATÍSTICAS
 
 ### Progresso Geral
-- **Steps concluídos:** 2/28 (7.1%)
-- **Fase atual:** Fase 1 - Fundação (Step 02/08)
-- **Estimativa de conclusão:** ~8 semanas
+- **Steps concluídos:** 4/28 (14.3%)
+- **Fase atual:** Fase 1 - Fundação (Step 04/08)
+- **Estimativa de conclusão:** ~7 semanas
 
 ### Código
-- **Linhas de código (novo):** ~1000
-- **Arquivos criados:** 15 (12 código + 3 docs)
-- **Arquivos modificados:** 1
-- **Cobertura de testes:** Manual (scripts de teste criados)
+- **Linhas de código (novo):** ~1920
+- **Arquivos criados:** 24 (18 código + 6 scripts/docs)
+- **Arquivos modificados:** 2
+- **Cobertura de testes:** Manual (scripts de teste criados para cada step)
 
 ### Agentes
-- **Implementados:** 0/6
+- **Implementados:** 2/6 (ChatAgent, CronAgent)
 - **Em progresso:** 0
-- **Pendentes:** 6 (Script, Chat, Email, Logs, Git, Analytics)
+- **Pendentes:** 4 (Email, Logs, Script, Git)
 
 ### Memória
-- **Camadas implementadas:** 0/3
-- **Busca semântica:** ❌ Não
-- **Embeddings:** ❌ Não
+- **Camadas implementadas:** 3/3 ✅
+- **Busca semântica:** ❌ Não (usando keywords)
+- **Embeddings:** ❌ Não (futuro)
 
 ### Autonomia
 - **Auto-aprovação:** ❌ Desabilitada
@@ -892,15 +1192,18 @@ WhatsApp → whatsapp.ts (monolítico) → Skills/Executor
 ## 🎯 PRÓXIMAS AÇÕES
 
 ### Imediatas (Hoje)
-1. [ ] Revisar roadmap-v1.1.1.md
-2. [ ] Configurar ambiente de desenvolvimento
-3. [ ] Criar branch `feature/step-01-gateway`
+1. [x] Revisar roadmap-v1.1.1.md
+2. [x] Configurar ambiente de desenvolvimento
+3. [x] Criar branch `feature/step-01-gateway`
+4. [ ] Implementar STEP-05 (Mais agentes especializados)
 
 ### Esta Semana (Semana 1)
-1. [ ] Implementar STEP-01 (Gateway)
-2. [ ] Implementar STEP-02 (Orchestrator)
-3. [ ] Implementar STEP-03 (Memory)
-4. [ ] Implementar STEP-04 (BaseAgent)
+1. [x] Implementar STEP-01 (Gateway)
+2. [x] Implementar STEP-02 (Orchestrator)
+3. [x] Implementar STEP-03 (Memory)
+4. [x] Implementar STEP-04 (Specialized Agents)
+5. [ ] Implementar STEP-05 (EmailAgent, LogsAgent)
+6. [ ] Implementar STEP-06 (Migration Wrapper)
 
 ### Este Mês (Fevereiro 2026)
 1. [ ] Completar Fase 1 (Fundação)
@@ -956,6 +1259,6 @@ WhatsApp → whatsapp.ts (monolítico) → Skills/Executor
 
 ---
 
-**Última atualização:** 2026-02-06 (STEP-02)
-**Próximo update:** Após STEP-03
+**Última atualização:** 2026-02-06 (STEP-04)
+**Próximo update:** Após STEP-05
 **Mantenedor:** Equipe Turion
