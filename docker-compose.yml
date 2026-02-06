@@ -1,12 +1,43 @@
+# ============================================================================
+# Turion Docker Compose - V1.1.1
+# Configuração de produção otimizada com multi-stage build
+# ============================================================================
+
+version: '3.8'
+
 services:
   turion:
-    image: node:20-alpine
-    working_dir: /app
-    command: ["sh", "-c", "npm install && npm run dev"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: turion
+    restart: unless-stopped
+
+    # Volumes para persistência de dados
     volumes:
-      - ./:/app
       - ./state:/app/state
       - ./logs:/app/logs
+      - ./auth_info:/app/auth_info
+
+    # Variáveis de ambiente
     env_file:
       - .env
-    restart: unless-stopped
+
+    # Porta exposta (se necessário no futuro)
+    ports:
+      - "3000:3000"
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('healthy')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+
+    # Logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

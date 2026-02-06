@@ -6,21 +6,71 @@ Instalação rápida e automatizada do Turion com Brain System V2.
 
 ## 📋 Pré-requisitos
 
-- **Node.js** >= 18.x (será instalado automaticamente se não existir)
-- **Git** (será instalado automaticamente se não existir)
+### Para Docker (Recomendado) 🐳
+- **Docker** e **Docker Compose** instalados
+- **Git** (para clonar o repositório)
+- **Chave API da Anthropic** (obtenha em: https://console.anthropic.com/)
+
+### Para PM2 (Alternativa) ⚡
+- **Node.js** >= 18.x (será instalado automaticamente)
+- **Git** (será instalado automaticamente)
 - **Chave API da Anthropic** (obtenha em: https://console.anthropic.com/)
 
 ---
 
-## 🐧 Linux / macOS
+## 🐳 Instalação com Docker (Recomendado)
 
-### Instalação Rápida (1 comando) - Estilo OpenClaw
+**Funciona em Linux, macOS e Windows** - Mais seguro e isolado!
+
+### Instalação Rápida
+
+```bash
+# 1. Clonar repositório
+git clone https://github.com/LucasBolla94/turionai.git
+cd turionai
+
+# 2. Configurar variáveis de ambiente
+cp .env.example .env
+# Edite o .env e adicione sua ANTHROPIC_API_KEY
+
+# 3. Iniciar com Docker
+docker-compose up -d
+
+# 4. Ver logs e escanear QR Code do WhatsApp
+docker-compose logs -f turion
+```
+
+### Comandos Úteis Docker
+
+```bash
+# Ver logs em tempo real
+docker-compose logs -f turion
+
+# Reiniciar
+docker-compose restart turion
+
+# Parar
+docker-compose down
+
+# Atualizar para nova versão
+git pull && docker-compose up -d --build
+```
+
+---
+
+## ⚡ Instalação com PM2 (Alternativa)
+
+Use esta opção se preferir rodar diretamente no sistema sem Docker.
+
+### 🐧 Linux / macOS
+
+**Instalação Rápida (1 comando) - Estilo OpenClaw:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LucasBolla94/turionai/main/install.sh | bash
 ```
 
-### Instalação Manual
+**Instalação Manual:**
 
 ```bash
 # 1. Baixar script
@@ -33,11 +83,9 @@ chmod +x install.sh
 ./install.sh
 ```
 
----
+### 🪟 Windows
 
-## 🪟 Windows
-
-### Instalação Rápida (PowerShell como Administrador) - Estilo OpenClaw
+**Instalação Rápida (PowerShell como Administrador) - Estilo OpenClaw:**
 
 ```powershell
 iwr -useb https://raw.githubusercontent.com/LucasBolla94/turionai/main/install.ps1 | iex
@@ -50,7 +98,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force; `
 iwr https://raw.githubusercontent.com/LucasBolla94/turionai/main/install.ps1 -UseBasicParsing | iex
 ```
 
-### Instalação Manual
+**Instalação Manual:**
 
 ```powershell
 # 1. Abrir PowerShell como Administrador
@@ -69,30 +117,53 @@ cd turionai
 
 O Turion suporta **ambas as opções**. Escolha conforme seu ambiente:
 
-### Docker 🐳 (Recomendado para Produção)
+### 🐳 Docker (Recomendado - Mais Seguro)
 
 **Vantagens:**
-- ✅ Isolamento completo do sistema
-- ✅ Portabilidade máxima
-- ✅ Fácil escalar e replicar
-- ✅ Padrão em Cloud/Kubernetes
+- ✅ **Isolamento completo** - não afeta o sistema do usuário
+- ✅ **Portabilidade máxima** - funciona em qualquer lugar
+- ✅ **Segurança** - ambiente controlado e isolado
+- ✅ **Fácil de escalar** - ideal para Cloud/Kubernetes
+- ✅ **Sem dependências** - tudo incluído no container
 
-**Instalação Docker:**
+**Instalação Docker Rápida:**
 ```bash
-# Com docker-compose
+# 1. Clonar repositório
+git clone https://github.com/LucasBolla94/turionai.git
+cd turionai
+
+# 2. Copiar .env.example para .env
+cp .env.example .env
+
+# 3. Editar .env e adicionar suas API Keys
+nano .env  # ou vim .env
+
+# 4. Iniciar com Docker Compose
 docker-compose up -d
 
-# Ou com Docker direto
-docker run -d --name turion \
-  --restart unless-stopped \
-  -v $(pwd):/app \
-  -v $(pwd)/state:/app/state \
-  --env-file .env \
-  node:20-alpine \
-  sh -c "cd /app && npm install && npm start"
+# 5. Ver logs e QR Code do WhatsApp
+docker-compose logs -f turion
 ```
 
-### PM2 ⚡ (Recomendado para VPS/Desenvolvimento)
+**Comandos Docker úteis:**
+```bash
+# Ver logs
+docker-compose logs -f turion
+
+# Reiniciar
+docker-compose restart turion
+
+# Parar
+docker-compose down
+
+# Reconstruir após atualização
+docker-compose up -d --build
+
+# Ver status
+docker-compose ps
+```
+
+### ⚡ PM2 (Alternativa para VPS/Desenvolvimento)
 
 **Vantagens:**
 - ✅ Mais leve (sem overhead do Docker)
@@ -100,7 +171,7 @@ docker run -d --name turion \
 - ✅ Monitoramento integrado
 - ✅ Ótimo para um único servidor
 
-**Instalação PM2:** Use os scripts acima!
+**Instalação PM2:** Use os scripts de instalação automática abaixo!
 
 ---
 
@@ -142,7 +213,20 @@ O wizard interativo vai solicitar:
 
 ## 📱 Conectar WhatsApp
 
-Após a instalação:
+### Com Docker
+
+```bash
+# Ver logs (QR Code aparecerá aqui)
+docker-compose logs -f turion
+
+# Escanear QR Code com WhatsApp:
+# 1. Abrir WhatsApp no celular
+# 2. Menu > Aparelhos conectados
+# 3. Conectar novo aparelho
+# 4. Escanear QR Code
+```
+
+### Com PM2
 
 ```bash
 # Ver logs (QR Code aparecerá aqui)
@@ -225,19 +309,72 @@ pm2 save
 
 ## 🐛 Solução de Problemas
 
-### PM2 não está instalado
+### Docker
+
+#### Container não inicia
+
+```bash
+# Ver logs detalhados
+docker-compose logs turion
+
+# Reconstruir imagem
+docker-compose down
+docker-compose up -d --build
+
+# Verificar se porta 3000 está livre
+docker ps
+```
+
+#### QR Code não aparece
+
+```bash
+# Ver logs em tempo real
+docker-compose logs -f turion
+
+# Reiniciar container
+docker-compose restart turion
+
+# Verificar se .env está configurado
+cat .env | grep ANTHROPIC_API_KEY
+```
+
+#### WhatsApp desconecta frequentemente
+
+```bash
+# Ver logs
+docker-compose logs -f turion
+
+# Verificar volumes persistidos
+docker-compose exec turion ls -la /app/auth_info
+docker-compose exec turion ls -la /app/state
+```
+
+#### Erro de permissão em volumes
+
+```bash
+# Dar permissão aos diretórios
+sudo chown -R 1001:1001 state logs auth_info
+
+# Ou recriar volumes
+docker-compose down -v
+docker-compose up -d
+```
+
+### PM2
+
+#### PM2 não está instalado
 
 ```bash
 npm install -g pm2
 ```
 
-### Erro de permissão (Linux/macOS)
+#### Erro de permissão (Linux/macOS)
 
 ```bash
 sudo npm install -g pm2
 ```
 
-### Erro "cannot find module" após atualização
+#### Erro "cannot find module" após atualização
 
 ```bash
 cd ~/turion  # ou caminho da instalação
@@ -246,7 +383,7 @@ npm run build
 pm2 restart turion
 ```
 
-### QR Code não aparece
+#### QR Code não aparece
 
 ```bash
 # Ver logs detalhados
@@ -256,12 +393,12 @@ pm2 logs turion --lines 100
 pm2 restart turion
 ```
 
-### WhatsApp desconecta frequentemente
+#### WhatsApp desconecta frequentemente
 
 Verifique:
 1. Celular está conectado à internet
 2. WhatsApp não está aberto em outro dispositivo
-3. Logs do PM2: `pm2 logs turion`
+3. Logs: `pm2 logs turion` (PM2) ou `docker-compose logs -f turion` (Docker)
 
 ---
 
@@ -336,7 +473,15 @@ pm2 logs turion --err
 
 ## 🔄 Atualização
 
-Para atualizar para nova versão:
+### Com Docker
+
+```bash
+cd turionai
+git pull
+docker-compose up -d --build
+```
+
+### Com PM2
 
 ```bash
 cd ~/turion
@@ -350,11 +495,24 @@ pm2 restart turion
 
 ## ✅ Checklist Pós-Instalação
 
+### Docker 🐳
+
+- [ ] Docker e Docker Compose instalados
+- [ ] Container está rodando (`docker-compose ps`)
+- [ ] Turion aparece como "Up" no status
+- [ ] Logs acessíveis (`docker-compose logs -f turion`)
+- [ ] QR Code foi escaneado com sucesso
+- [ ] WhatsApp conectado
+- [ ] .env configurado com ANTHROPIC_API_KEY
+- [ ] Volumes persistidos (state, logs, auth_info)
+- [ ] Teste enviando mensagem no WhatsApp
+
+### PM2 ⚡
+
 - [ ] PM2 está rodando (`pm2 status`)
 - [ ] Turion aparece como "online" no PM2
 - [ ] QR Code foi escaneado com sucesso
 - [ ] WhatsApp conectado
-- [ ] Brain V2 ativado (.env tem `TURION_USE_BRAIN_V2=true`)
 - [ ] API Anthropic configurada
 - [ ] Teste enviando mensagem no WhatsApp
 
