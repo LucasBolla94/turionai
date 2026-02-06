@@ -14,7 +14,19 @@
 #
 ###############################################################################
 
-set -e  # Exit on error
+# Não usar set -e aqui para controlar melhor os erros
+
+# ===== CONFIGURAÇÕES =====
+INSTALL_DIR="$HOME/turion"
+REPO_URL="https://github.com/LucasBolla94/turionai.git"
+NODE_VERSION="18"
+PM2_VERSION="latest"
+IS_PIPE_MODE=false
+
+# Detectar se está executando via pipe (curl | bash)
+if [ ! -t 0 ]; then
+    IS_PIPE_MODE=true
+fi
 
 # ===== CORES =====
 RED='\033[0;31m'
@@ -187,65 +199,210 @@ install_pm2() {
     print_success "PM2 instalado!"
 }
 
-# ===== INSTALAÇÃO DO TURION =====
-install_turion() {
+# ===== DETECÇÃO DE INSTALAÇÃO EXISTENTE =====
+find_existing_installation() {
+    # Procurar em locais comuns
+    local possible_locations=(
+        "$HOME/turion"
+        "/opt/turion/turionai"
+        "/opt/turion"
+        "$HOME/turionai"
+    )
+
+    for location in "${possible_locations[@]}"; do
+        if [ -d "$location" ] && [ -f "$location/package.json" ]; then
+            # Verificar se é realmente o Turion
+            if grep -q "turionai" "$location/package.json" 2>/dev/null; then
+                echo "$location"
+                return 0
+            fi
+        fi
+    done
+
+    return 1
+}
+
+# ===== OPÇÕES DE UPDATE =====
+handle_existing_installation() {
+    local existing_dir="$1"
+
     print_header
-    print_box "INSTALANDO TURION" "$MAGENTA"
+    print_box "INSTALAÇÃO EXISTENTE DETECTADA" "$YELLOW"
 
-    # Verificar se já existe
-    if [ -d "$INSTALL_DIR" ]; then
-        print_warning "Turion já está instalado em $INSTALL_DIR"
-        echo ""
-        read -p "$(echo -e ${YELLOW}"Deseja reinstalar? (s/N): "${NC})" -n 1 -r
-        echo ""
+    echo ""
+    echo -e "${WHITE}Turion já está instalado em: ${CYAN}$existing_dir${NC}"
+    echo ""
+    echo -e "${YELLOW}O que você deseja fazer?${NC}"
+    echo ""
+    echo -e "${CYAN}1)${NC} Update ${BOLD}COM${NC} reset de chaves (limpa .env e gera nova senha)"
+    echo -e "${CYAN}2)${NC} Update ${BOLD}SEM${NC} reset de chaves (preserva .env existente)"
+    echo -e "${CYAN}3)${NC} Cancelar instalação"
+    echo ""
 
-        if [[ ! $REPLY =~ ^[Ss]$ ]]; then
+    # Se estiver em modo pipe, fazer update sem reset por padrão
+    if [ "$IS_PIPE_MODE" = true ]; then
+        print_info "Modo automático: fazendo update SEM reset de chaves..."
+        sleep 2
+        REPLY="2"
+    else
+        read -p "$(echo -e ${YELLOW}"Escolha uma opção (1/2/3): "${NC})" -n 1 -r
+        echo ""
+        echo ""
+    fi
+
+    case $REPLY in
+        1)
+            print_step "Update COM reset de chaves selecionado"
+            # Fazer backup do .env antigo
+            if [ -f "$existing_dir/.env" ]; then
+                print_step "Fazendo backup de .env antigo..."
+                cp "$existing_dir/.env" "$existing_dir/.env.backup.$(date +%Y%m%d_%H%M%S)"
+                print_success "Backup criado!"
+            fi
+            # Atualizar diretório de instalação para o existente
+            INSTALL_DIR="$existing_dir"
+            return 0
+            ;;
+        2)
+            print_step "Update SEM reset de chaves selecionado"
+            # Preservar .env
+            if [ -f "$existing_dir/.env" ]; then
+                print_info "Arquivo .env será preservado"
+            fi
+            # Atualizar diretório de instalação para o existente
+            INSTALL_DIR="$existing_dir"
+            return 1  # Retorna 1 para indicar "preservar .env"
+            ;;
+        3|*)
             print_info "Instalação cancelada"
             exit 0
-        fi
+            ;;
+    esac
+}
 
-        print_step "Removendo instalação anterior..."
-        rm -rf "$INSTALL_DIR"
+# ===== INSTALAÇÃO DO TURION =====
+install_turion() {
+    local preserve_env=false
+
+    # Verificar se já existe instalação
+    existing_installation=$(find_existing_installation)
+    if [ $? -eq 0 ]; then
+        handle_existing_installation "$existing_installation"
+        preserve_env=$?  # 0 = reset, 1 = preserve
+
+        print_step "Parando PM2 se estiver rodando..."
+        pm2 stop turion 2>/dev/null || true
+        pm2 delete turion 2>/dev/null || true
+        print_success "PM2 parado!"
+
+        # Preservar .env se necessário
+        if [ $preserve_env -eq 1 ] && [ -f "$INSTALL_DIR/.env" ]; then
+            print_step "Preservando configurações..."
+            cp "$INSTALL_DIR/.env" "/tmp/turion_env_backup"
+        fi
+    else
+        print_header
+        print_box "INSTALANDO TURION" "$MAGENTA"
+    fi
+
+    # Remover instalação antiga (mas preservar .env se necessário)
+    if [ -d "$INSTALL_DIR" ]; then
+        print_step "Removendo arquivos antigos..."
+        # Manter apenas .env se preservar
+        if [ $preserve_env -eq 1 ]; then
+            find "$INSTALL_DIR" -mindepth 1 ! -name '.env' -delete 2>/dev/null || rm -rf "$INSTALL_DIR"/*
+        else
+            rm -rf "$INSTALL_DIR"
+        fi
     fi
 
     # Criar diretório
     mkdir -p "$INSTALL_DIR"
-    cd "$INSTALL_DIR"
+    cd "$INSTALL_DIR" || {
+        print_error "Erro ao acessar diretório $INSTALL_DIR"
+        exit 1
+    }
 
     # Baixar e extrair do GitHub
     print_step "Baixando Turion do GitHub..."
 
     # Download do arquivo ZIP da branch main
-    curl -L -o turion.tar.gz "https://github.com/LucasBolla94/turionai/archive/refs/heads/main.tar.gz"
+    if ! curl -L -o turion.tar.gz "https://github.com/LucasBolla94/turionai/archive/refs/heads/main.tar.gz"; then
+        print_error "Erro ao baixar Turion do GitHub"
+        exit 1
+    fi
 
     print_step "Extraindo arquivos..."
-    tar -xzf turion.tar.gz --strip-components=1
+    if ! tar -xzf turion.tar.gz --strip-components=1; then
+        print_error "Erro ao extrair arquivos"
+        exit 1
+    fi
     rm turion.tar.gz
 
     print_success "Turion baixado e extraído!"
 
+    # Restaurar .env se foi preservado
+    if [ $preserve_env -eq 1 ] && [ -f "/tmp/turion_env_backup" ]; then
+        print_step "Restaurando configurações preservadas..."
+        cp "/tmp/turion_env_backup" "$INSTALL_DIR/.env"
+        rm "/tmp/turion_env_backup"
+        print_success "Configurações restauradas!"
+    fi
+
     # Instalar dependências
     print_step "Instalando dependências Node.js..."
-    npm install --production=false
+    if ! npm install --production=false; then
+        print_error "Erro ao instalar dependências"
+        exit 1
+    fi
     print_success "Dependências instaladas!"
 
     # Compilar TypeScript
     print_step "Compilando TypeScript..."
-    npm run build
+    if ! npm run build; then
+        print_error "Erro ao compilar TypeScript"
+        exit 1
+    fi
     print_success "Projeto compilado!"
 
     # Criar diretórios necessários
     print_step "Criando diretórios..."
     mkdir -p logs state auth_info
     print_success "Diretórios criados!"
+
+    # Retornar preserve_env para use posterior
+    return $preserve_env
 }
 
 # ===== CONFIGURAÇÃO =====
 run_setup() {
+    local preserve_env="$1"  # Recebe se deve preservar .env
+
     print_header
     print_box "CONFIGURAÇÃO AUTOMÁTICA" "$CYAN"
 
     echo ""
+
+    # Se .env já existe e foi preservado, não recriar
+    if [ $preserve_env -eq 1 ] && [ -f .env ]; then
+        print_success "Configurações preservadas do .env existente!"
+        echo ""
+
+        # Ler senha existente
+        OWNER_PASSWORD=$(grep TURION_OWNER_PASSWORD .env 2>/dev/null | cut -d'=' -f2 || echo "")
+
+        if [ -n "$OWNER_PASSWORD" ]; then
+            print_info "Senha do proprietário (existente): ${BOLD}${YELLOW}${OWNER_PASSWORD}${NC}"
+        else
+            print_warning "Senha do proprietário não encontrada no .env"
+        fi
+
+        echo ""
+        sleep 2
+        return 0
+    fi
+
+    # Gerar nova senha
     print_step "Gerando senha de acesso do proprietário..."
 
     # Gerar senha de 8 números aleatória
@@ -442,13 +599,26 @@ main() {
 
     echo -e "${WHITE}Este script irá instalar e configurar o Turion automaticamente.${NC}"
     echo ""
-    echo -e "${DIM}Será instalado em: ${INSTALL_DIR}${NC}"
+
+    # Verificar se já existe instalação ANTES de perguntar
+    existing_installation=$(find_existing_installation)
+    has_existing=$?
+
+    if [ $has_existing -eq 0 ]; then
+        echo -e "${YELLOW}📍 Instalação existente detectada em: ${CYAN}$existing_installation${NC}"
+    else
+        echo -e "${CYAN}📍 Nova instalação em: ${WHITE}${INSTALL_DIR}${NC}"
+    fi
+
     echo ""
 
-    # Detectar se está sendo executado via pipe (curl | bash)
-    # Se stdin não é um terminal, pula confirmação
-    if [ -t 0 ]; then
-        # É um terminal interativo
+    # Se modo pipe E não tem instalação existente, continuar automaticamente
+    if [ "$IS_PIPE_MODE" = true ] && [ $has_existing -ne 0 ]; then
+        echo -e "${GREEN}▶ Modo automático: instalação iniciando...${NC}"
+        echo ""
+        sleep 2
+    elif [ "$IS_PIPE_MODE" = false ] && [ $has_existing -ne 0 ]; then
+        # Modo interativo sem instalação existente
         read -p "$(echo -e ${YELLOW}"Deseja continuar? (S/n): "${NC})" -n 1 -r
         echo ""
 
@@ -456,12 +626,8 @@ main() {
             print_info "Instalação cancelada"
             exit 0
         fi
-    else
-        # Executando via pipe, continua automaticamente
-        echo -e "${GREEN}▶ Modo automático detectado. Continuando instalação...${NC}"
-        echo ""
-        sleep 2
     fi
+    # Se tem instalação existente, handle_existing_installation vai perguntar
 
     # Verificar dependências
     print_header
@@ -485,10 +651,11 @@ main() {
     # Instalar Turion
     sleep 1
     install_turion
+    preserve_env=$?  # Capturar se deve preservar .env
 
     # Executar wizard de configuração
     sleep 1
-    run_setup
+    run_setup $preserve_env
 
     # Configurar PM2
     sleep 1
