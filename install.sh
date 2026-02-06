@@ -208,11 +208,21 @@ install_turion() {
         rm -rf "$INSTALL_DIR"
     fi
 
-    # Clonar repositório
-    print_step "Clonando repositório..."
-    git clone "$REPO_URL" "$INSTALL_DIR"
+    # Criar diretório
+    mkdir -p "$INSTALL_DIR"
     cd "$INSTALL_DIR"
-    print_success "Repositório clonado!"
+
+    # Baixar e extrair do GitHub
+    print_step "Baixando Turion do GitHub..."
+
+    # Download do arquivo ZIP da branch main
+    curl -L -o turion.tar.gz "https://github.com/LucasBolla94/turionai/archive/refs/heads/main.tar.gz"
+
+    print_step "Extraindo arquivos..."
+    tar -xzf turion.tar.gz --strip-components=1
+    rm turion.tar.gz
+
+    print_success "Turion baixado e extraído!"
 
     # Instalar dependências
     print_step "Instalando dependências Node.js..."

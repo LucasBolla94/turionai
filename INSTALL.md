@@ -14,7 +14,7 @@ Instalação rápida e automatizada do Turion com Brain System V2.
 
 ## 🐧 Linux / macOS
 
-### Instalação Rápida (1 comando)
+### Instalação Rápida (1 comando) - Estilo OpenClaw
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LucasBolla94/turionai/main/install.sh | bash
@@ -23,9 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/LucasBolla94/turionai/main/install.
 ### Instalação Manual
 
 ```bash
-# 1. Clonar repositório
-git clone https://github.com/LucasBolla94/turionai.git
-cd turionai
+# 1. Baixar script
+curl -fsSL https://raw.githubusercontent.com/LucasBolla94/turionai/main/install.sh -o install.sh
 
 # 2. Dar permissão de execução
 chmod +x install.sh
@@ -38,7 +37,13 @@ chmod +x install.sh
 
 ## 🪟 Windows
 
-### Instalação Rápida (PowerShell como Administrador)
+### Instalação Rápida (PowerShell como Administrador) - Estilo OpenClaw
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/LucasBolla94/turionai/main/install.ps1 | iex
+```
+
+**Alternativa (mais verbosa):**
 
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force; `
@@ -57,6 +62,45 @@ cd turionai
 # 3. Executar instalador
 .\install.ps1
 ```
+
+---
+
+## 🐳 Docker vs PM2 - Qual usar?
+
+O Turion suporta **ambas as opções**. Escolha conforme seu ambiente:
+
+### Docker 🐳 (Recomendado para Produção)
+
+**Vantagens:**
+- ✅ Isolamento completo do sistema
+- ✅ Portabilidade máxima
+- ✅ Fácil escalar e replicar
+- ✅ Padrão em Cloud/Kubernetes
+
+**Instalação Docker:**
+```bash
+# Com docker-compose
+docker-compose up -d
+
+# Ou com Docker direto
+docker run -d --name turion \
+  --restart unless-stopped \
+  -v $(pwd):/app \
+  -v $(pwd)/state:/app/state \
+  --env-file .env \
+  node:20-alpine \
+  sh -c "cd /app && npm install && npm start"
+```
+
+### PM2 ⚡ (Recomendado para VPS/Desenvolvimento)
+
+**Vantagens:**
+- ✅ Mais leve (sem overhead do Docker)
+- ✅ Setup mais simples
+- ✅ Monitoramento integrado
+- ✅ Ótimo para um único servidor
+
+**Instalação PM2:** Use os scripts acima!
 
 ---
 

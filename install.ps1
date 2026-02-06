@@ -193,11 +193,30 @@ function Install-Turion {
         Remove-Item -Path $InstallDir -Recurse -Force
     }
 
-    # Clonar repositório
-    Print-Step "Clonando repositório..."
-    git clone $RepoUrl $InstallDir
+    # Criar diretório
+    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     Set-Location $InstallDir
-    Print-Success "Repositório clonado!"
+
+    # Baixar do GitHub
+    Print-Step "Baixando Turion do GitHub..."
+
+    $ZipUrl = "https://github.com/LucasBolla94/turionai/archive/refs/heads/main.zip"
+    $ZipFile = "turion.zip"
+
+    # Download usando WebClient (compatível com Windows 7+)
+    $WebClient = New-Object System.Net.WebClient
+    $WebClient.DownloadFile($ZipUrl, $ZipFile)
+
+    Print-Step "Extraindo arquivos..."
+    Expand-Archive -Path $ZipFile -DestinationPath "." -Force
+
+    # Mover arquivos da pasta extraída para raiz
+    $ExtractedFolder = Get-ChildItem -Directory | Where-Object { $_.Name -like "turionai-*" }
+    Get-ChildItem -Path $ExtractedFolder.FullName | Move-Item -Destination "." -Force
+    Remove-Item -Path $ExtractedFolder.FullName -Recurse -Force
+    Remove-Item -Path $ZipFile -Force
+
+    Print-Success "Turion baixado e extraído!"
 
     # Instalar dependências
     Print-Step "Instalando dependências Node.js..."
