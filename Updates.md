@@ -126,6 +126,241 @@ STEP-XX: Título do próximo step
 
 ---
 
+## [STEP-02] Brain Orchestrator
+**Data:** 2026-02-06
+**Branch:** feature/step-02-orchestrator
+**Commit:** (pending)
+**Status:** ✅ Concluído (não testado)
+
+### O que foi feito
+Criado sistema de orquestração inteligente (Brain Orchestrator) que classifica intenções usando Claude e delega tarefas para agentes especializados. Implementa decisões baseadas em confiança, pedidos automáticos de clarificação e sistema de fallback.
+
+### Arquivos criados
+- `src/brain/types.ts` - Interfaces do sistema Brain (IntentClassification, ProcessRequest, ProcessResult)
+- `src/brain/orchestrator.ts` - Classe principal BrainOrchestrator
+- `src/brain/agents/baseAgent.ts` - Classe base abstrata para agentes especializados
+- `src/brain/index.ts` - Exports do módulo Brain
+- `src/test-orchestrator.ts` - Script de teste standalone com mock agents
+- `test-orchestrator.sh` - Script helper para Linux/Mac
+- `test-orchestrator.ps1` - Script helper para Windows
+
+### Arquivos modificados
+Nenhum (novo módulo independente).
+
+### Funções criadas
+
+#### BrainOrchestrator
+**Propósito:** Orquestrador central que classifica intenções do usuário usando Claude e delega para agentes especializados.
+
+**Métodos principais:**
+- `registerAgent(agent: BaseAgent)` - Registra agente especializado
+- `process(request: ProcessRequest)` - Processa mensagem do usuário (classifica + delega)
+- `getStats()` - Retorna estatísticas do orchestrator
+- `classifyIntent(request: ProcessRequest)` - Classifica intenção usando Claude (privado)
+- `findAgent(agentType: string)` - Encontra agente apropriado (privado)
+- `getFallbackClassification()` - Retorna classificação fallback (privado)
+
+**Eventos internos:**
+- Usa agentes disponíveis: `chat`, `email`, `cron`, `logs`, `script`, `git`, `deploy`
+
+**Lógica de confiança:**
+- **Confiança > 60%:** Delega para agente
+- **Confiança < 60%:** Pede clarificação ao usuário
+- **Agente não encontrado:** Retorna mensagem de fallback
+
+**Exemplo de uso:**
+```typescript
+import { BrainOrchestrator } from "./brain";
+import { MyChatAgent } from "./agents/chatAgent";
+
+const orchestrator = new BrainOrchestrator();
+
+// Registrar agentes
+orchestrator.registerAgent(new MyChatAgent());
+
+// Processar mensagem
+const result = await orchestrator.process({
+  message: "me lembra de ligar pro João em 10min",
+  userId: "user_123",
+  threadId: "thread_456",
+  channel: "whatsapp"
+});
+
+console.log(result.response);
+console.log(result.metadata); // { intent, agentType, confidence, processingTime }
+```
+
+#### BaseAgent (Classe Abstrata)
+**Propósito:** Classe base para todos os agentes especializados. Fornece helper methods e estrutura comum.
+
+**Propriedades abstratas:**
+- `name` (string) - Nome do agente (ex: "chat", "email")
+- `description` (string) - Descrição do que o agente faz
+
+**Métodos abstratos:**
+- `canHandle(intent: string): boolean` - Verifica se agente pode lidar com intent
+- `execute(params: AgentExecuteParams): Promise<AgentExecuteResult>` - Executa lógica do agente
+
+**Helper methods:**
+- `callClaude(system, userMessage, model?)` - Chama Claude API (protegido)
+- `extractJSON<T>(text)` - Extrai JSON de texto (protegido)
+
+**Exemplo de agente personalizado:**
+```typescript
+import { BaseAgent, AgentExecuteParams, AgentExecuteResult } from "./brain";
+
+class EmailAgent extends BaseAgent {
+  name = "email";
+  description = "Gerencia emails (listar, ler, responder)";
+
+  canHandle(intent: string): boolean {
+    return intent === "email" || intent.includes("email");
+  }
+
+  async execute(params: AgentExecuteParams): Promise<AgentExecuteResult> {
+    // Usar helper method
+    const response = await this.callClaude(
+      "Você é um assistente de email...",
+      params.message
+    );
+
+    return {
+      response: response,
+      actions: [{ type: "email.list", payload: {} }]
+    };
+  }
+}
+```
+
+#### IntentClassification (Interface)
+**Propósito:** Estrutura de dados retornada pela classificação de intenção.
+
+**Campos:**
+- `intent` (string) - Descrição curta da intenção
+- `agentType` (string) - Tipo de agente responsável
+- `confidence` (number) - Confiança 0-100
+- `args` (Record<string, any>) - Argumentos extraídos da mensagem
+- `needsClarification` (boolean) - Se precisa pedir clarificação
+- `clarificationQuestion?` (string) - Pergunta para o usuário
+
+#### ProcessRequest (Interface)
+**Propósito:** Estrutura de entrada para processamento de mensagem.
+
+**Campos:**
+- `message` (string) - Mensagem do usuário
+- `userId` (string) - ID do usuário
+- `threadId` (string) - ID da thread/conversa
+- `channel` (string) - Canal de origem
+- `context?` (string) - Contexto adicional (memória)
+
+#### ProcessResult (Interface)
+**Propósito:** Estrutura de saída do processamento.
+
+**Campos:**
+- `response` (string) - Resposta para o usuário
+- `actions?` (array) - Ações a executar
+- `shouldSaveMemory` (boolean) - Se deve salvar na memória
+- `metadata?` (object) - Metadados (intent, confidence, processingTime)
+
+### Configuração (.env)
+Variáveis adicionadas:
+
+```bash
+# Feature Flag
+TURION_USE_ORCHESTRATOR=false  # Ativar quando testar
+
+# API Key (já existente)
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### Testes realizados
+**Status:** ⏳ Aguardando teste no VPS
+
+**Testes planejados (5 cenários):**
+- ⏳ TESTE 1: Saudação (alta confiança - deve delegar para ChatAgent)
+- ⏳ TESTE 2: Criar lembrete (alta confiança - deve delegar para CronAgent)
+- ⏳ TESTE 3: Mensagem vaga (baixa confiança - deve pedir clarificação)
+- ⏳ TESTE 4: Intent sem agente (deve retornar fallback)
+- ⏳ TESTE 5: Estatísticas do orchestrator
+
+**Script de teste standalone:**
+```bash
+# Linux/Mac
+./test-orchestrator.sh
+
+# Windows
+.\test-orchestrator.ps1
+
+# Ou direto
+npx tsx src/test-orchestrator.ts
+```
+
+### Breaking Changes
+❌ **Nenhum** - Código legado continua funcionando. Orchestrator é opt-in via feature flag.
+
+### Como ativar
+1. Habilitar feature flag: `TURION_USE_ORCHESTRATOR=true`
+2. Integrar com Gateway (STEP-01):
+
+```typescript
+import { MessageGateway } from "./gateway";
+import { BrainOrchestrator } from "./brain";
+import { ChatAgent } from "./agents/chatAgent"; // exemplo
+
+// Criar orchestrator
+const orchestrator = new BrainOrchestrator();
+orchestrator.registerAgent(new ChatAgent());
+
+// Criar gateway
+const gateway = new MessageGateway();
+
+// Conectar gateway → orchestrator
+gateway.on("message", async (msg) => {
+  const result = await orchestrator.process({
+    message: msg.text,
+    userId: msg.userId,
+    threadId: msg.threadId,
+    channel: msg.channel
+  });
+
+  // Enviar resposta
+  await gateway.sendMessage(msg.channel, msg.from, result.response);
+
+  // Executar ações (se houver)
+  if (result.actions) {
+    for (const action of result.actions) {
+      // Executar action.type com action.payload
+    }
+  }
+});
+```
+
+### Rollback
+Se houver problemas:
+
+```bash
+# Reverter commit
+git revert COMMIT_HASH
+
+# Ou voltar para main
+git checkout main
+git branch -D feature/step-02-orchestrator
+
+# Desativar via feature flag
+TURION_USE_ORCHESTRATOR=false
+```
+
+### Métricas
+- **Linhas adicionadas:** ~550
+- **Linhas removidas:** 0
+- **Arquivos criados:** 7
+- **Arquivos modificados:** 0
+
+### Próximo Step
+STEP-03: Memory System (Short-term + Session + Long-term)
+
+---
+
 ## [STEP-01] Message Gateway Base
 **Data:** 2026-02-06
 **Branch:** feature/step-01-gateway
@@ -305,7 +540,8 @@ STEP-01: Message Gateway Base
 ## 📊 CHANGELOG RESUMIDO
 
 ### 2026-02-06
-- ✅ [STEP-01] Message Gateway Base (não testado)
+- ✅ [STEP-02] Brain Orchestrator (não testado)
+- ✅ [STEP-01] Message Gateway Base (testado e aprovado)
 - ✅ [STEP-00] Setup Inicial do Roadmap
 
 ---
@@ -319,7 +555,11 @@ STEP-01: Message Gateway Base
 - `MessageAdapter` - [STEP-01] Interface para adaptadores de canal
 
 ### Brain System
-*Aguardando implementação*
+- `BrainOrchestrator` - [STEP-02] Orquestrador central com classificação de intent
+- `BaseAgent` - [STEP-02] Classe base para agentes especializados
+- `IntentClassification` - [STEP-02] Interface de classificação
+- `ProcessRequest` - [STEP-02] Interface de requisição
+- `ProcessResult` - [STEP-02] Interface de resultado
 
 ### Memory System
 *Aguardando implementação*
@@ -380,15 +620,15 @@ WhatsApp → whatsapp.ts (monolítico) → Skills/Executor
 ## 📈 ESTATÍSTICAS
 
 ### Progresso Geral
-- **Steps concluídos:** 1/28 (3.6%)
-- **Fase atual:** Fase 1 - Fundação (Step 01/08)
+- **Steps concluídos:** 2/28 (7.1%)
+- **Fase atual:** Fase 1 - Fundação (Step 02/08)
 - **Estimativa de conclusão:** ~8 semanas
 
 ### Código
-- **Linhas de código (novo):** ~450
-- **Arquivos criados:** 8 (5 código + 3 docs)
+- **Linhas de código (novo):** ~1000
+- **Arquivos criados:** 15 (12 código + 3 docs)
 - **Arquivos modificados:** 1
-- **Cobertura de testes:** Manual (script de teste criado)
+- **Cobertura de testes:** Manual (scripts de teste criados)
 
 ### Agentes
 - **Implementados:** 0/6
@@ -474,6 +714,6 @@ WhatsApp → whatsapp.ts (monolítico) → Skills/Executor
 
 ---
 
-**Última atualização:** 2026-02-06 (STEP-00)
-**Próximo update:** Após STEP-01
+**Última atualização:** 2026-02-06 (STEP-02)
+**Próximo update:** Após STEP-03
 **Mantenedor:** Equipe Turion
