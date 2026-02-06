@@ -11,6 +11,7 @@ import type { WASocket } from "baileys";
 import { BrainOrchestrator } from "./orchestrator";
 import { MemorySystem } from "./memory";
 import { ChatAgent, CronAgent } from "./agents";
+import { executeActions } from "./actionExecutor";
 
 // Singleton instances (lazy initialization)
 let orchestratorInstance: BrainOrchestrator | null = null;
@@ -89,17 +90,21 @@ async function processBrainV2(params: {
     if (result.actions && result.actions.length > 0) {
       console.log(`[MigrationWrapper][V2] Actions geradas: ${result.actions.length}`);
 
-      for (const action of result.actions) {
-        console.log(`[MigrationWrapper][V2] Action: ${action.type}`, action.payload);
+      try {
+        const executionResults = await executeActions(result.actions);
 
-        // TODO: Integrar com executores do sistema legado
-        // Por enquanto, apenas loga as actions
-        // Em próximos steps, conectar com cronManager, emailClient, etc
+        for (let i = 0; i < executionResults.length; i++) {
+          const execResult = executionResults[i];
+          const action = result.actions[i];
 
-        if (action.type === "cron.create") {
-          // Exemplo: await createCronNormalized({ ... })
-          console.log(`[MigrationWrapper][V2] TODO: Criar cron com payload:`, action.payload);
+          if (execResult.success) {
+            console.log(`[MigrationWrapper][V2] Action ${action.type} executada com sucesso`);
+          } else {
+            console.error(`[MigrationWrapper][V2] Action ${action.type} falhou:`, execResult.error);
+          }
         }
+      } catch (error) {
+        console.error("[MigrationWrapper][V2] Erro ao executar actions:", error);
       }
     }
 
