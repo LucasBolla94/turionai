@@ -126,6 +126,302 @@ STEP-XX: Título do próximo step
 
 ---
 
+## [STEP-05] Migration Wrapper (Gradual V1→V2 Migration)
+**Data:** 2026-02-06
+**Branch:** feature/step-05-migration-wrapper
+**Commit:** 67c9964
+**Status:** ✅ TESTADO E APROVADO
+
+### O que foi feito
+Criado Migration Wrapper que permite migração gradual e segura do sistema legado (V1) para o novo Brain System V2, controlado por feature flag. Sistema com zero-risk, fallback automático e singleton pattern para performance.
+
+### Arquivos criados
+- `src/brain/migrationWrapper.ts` - Wrapper principal com feature flag (210 linhas)
+- `src/test-migration-wrapper.ts` - Suite de testes para ambos os modos (145 linhas)
+- `test-migration-wrapper.sh` - Script helper para Linux/Mac
+- `test-migration-wrapper.ps1` - Script helper para Windows
+
+### Arquivos modificados
+- `src/brain/index.ts` - Adicionados exports do migration wrapper
+
+### Funções criadas
+
+#### processBrainMessage()
+**Propósito:** Função principal do wrapper que decide entre Brain V2 (novo) ou Legacy (antigo) baseado na feature flag.
+
+**Parâmetros:**
+- `socket` (WASocket) - Socket do WhatsApp
+- `message` (string) - Mensagem do usuário
+- `userId` (string) - ID do usuário
+- `threadId` (string) - ID da thread/conversa
+- `from` (string) - JID do WhatsApp
+
+**Retorno:**
+- `string` - Resposta gerada pelo Brain V2, ou
+- `null` - Indica que deve usar fluxo Legacy
+
+**Feature Flag:** `TURION_USE_BRAIN_V2` (default: false)
+
+**Comportamento:**
+- Se flag = true → Usa Brain V2 (Orchestrator + Agents + Memory)
+- Se flag = false → Delega para sistema Legacy (handleBrain)
+- Se Brain V2 falhar → Fallback automático para Legacy
+
+**Exemplo de uso:**
+```typescript
+import { processBrainMessage } from "./brain/migrationWrapper";
+
+// No handler de mensagens do WhatsApp
+const response = await processBrainMessage({
+  socket,
+  message: "Oi! Me lembra de fazer deploy às 18h",
+  userId: "5511999999999",
+  threadId: "thread_123",
+  from: "5511999999999@s.whatsapp.net"
+});
+
+if (response) {
+  // Brain V2 processou a mensagem
+  await socket.sendMessage(from, { text: response });
+} else {
+  // Legacy mode - continuar fluxo normal
+  // O código legado em handleBrain() será executado
+}
+```
+
+#### getBrainSystemStats()
+**Propósito:** Retorna estatísticas do sistema ativo (Brain V2 ou Legacy).
+
+**Retorno:**
+```typescript
+{
+  active: "brain_v2" | "legacy",
+  initialized: boolean,
+  orchestrator?: {
+    agents: number,
+    agentNames: string[]
+  },
+  memory?: {
+    shortTerm: { size: number, maxSize: number },
+    session: { sessions: number },
+    longTerm: { entries: number }
+  }
+}
+```
+
+**Exemplo:**
+```typescript
+import { getBrainSystemStats } from "./brain/migrationWrapper";
+
+const stats = getBrainSystemStats();
+console.log("Sistema ativo:", stats.active);
+
+if (stats.initialized && stats.orchestrator) {
+  console.log("Agentes registrados:", stats.orchestrator.agentNames);
+  console.log("Memória:", stats.memory);
+}
+```
+
+#### resetBrainSystem()
+**Propósito:** Reseta as instâncias singleton (útil para testes).
+
+**Exemplo:**
+```typescript
+import { resetBrainSystem } from "./brain/migrationWrapper";
+
+// Resetar sistema (força reinicialização na próxima chamada)
+resetBrainSystem();
+```
+
+### Arquitetura
+
+```
+┌──────────────────────────────────────────┐
+│       processBrainMessage()              │
+│  ┌──────────────────────────────────┐   │
+│  │  Feature Flag Check              │   │
+│  │  TURION_USE_BRAIN_V2 = ?         │   │
+│  └────────────┬─────────────────────┘   │
+│               │                          │
+│         ┌─────┴──────┐                  │
+│         │            │                   │
+│      ✅ TRUE      ❌ FALSE               │
+│         │            │                   │
+│    ┌────▼─────┐  ┌──▼─────┐            │
+│    │ Brain V2 │  │ Legacy │             │
+│    │ (Orches  │  │ (handle│             │
+│    │ trator)  │  │ Brain) │             │
+│    └────┬─────┘  └────────┘             │
+│         │                                │
+│    Error? → Fallback to Legacy          │
+└──────────────────────────────────────────┘
+```
+
+**Componentes Brain V2:**
+- BrainOrchestrator (classificação de intent)
+- ChatAgent + CronAgent (agentes especializados)
+- MemorySystem (3 camadas: short-term, session, long-term)
+- Action generation (cron.create, email.send, etc)
+
+**Singleton Pattern:**
+- Orchestrator e Memory são criados apenas uma vez
+- Lazy initialization (só quando TURION_USE_BRAIN_V2=true)
+- Performance otimizada (reutiliza instâncias)
+
+### Configuração (.env)
+```bash
+# Feature Flag - Migration Wrapper
+TURION_USE_BRAIN_V2=false  # Default: usa sistema Legacy
+# TURION_USE_BRAIN_V2=true  # Ativa Brain V2 (novo sistema)
+
+# API Key (necessária se Brain V2 estiver ativo)
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### Testes realizados
+**Status:** ✅ APROVADO
+
+**Resultados (5/5 testes passaram - 100%):**
+
+#### Modo Legacy (TURION_USE_BRAIN_V2=false):
+- ✅ TESTE 1: Saudação → Delegado para Legacy (retorna null)
+- ✅ TESTE 2: Lembrete → Delegado para Legacy (retorna null)
+- ✅ TESTE 3: Contexto → Delegado para Legacy (retorna null)
+- ✅ TESTE 4: Estatísticas → { active: "legacy", initialized: false }
+
+#### Modo Brain V2 (TURION_USE_BRAIN_V2=true):
+- ✅ TESTE 1: Saudação (ChatAgent)
+  - Intent: saudacao_casual
+  - Confidence: 100%
+  - Tempo: ~6.4s
+  - Resposta: Com personalidade e emoji ✅
+
+- ✅ TESTE 2: Lembrete (CronAgent)
+  - Intent: criar_lembrete_deploy
+  - Confidence: 95%
+  - Tempo: ~8.4s
+  - Action gerada: cron.create com payload completo ✅
+
+- ✅ TESTE 3: Contexto (Memory)
+  - Intent: listar_tarefas_agendadas
+  - Confidence: 75%
+  - Tempo: ~11.1s
+  - **Memória funcionando:** Reconheceu "deploy às 18h" do teste 2! ✅
+
+- ✅ TESTE 4: Estatísticas do sistema
+  - Orchestrator: 2 agentes (chat, cron)
+  - Memory: 5 sessões, 6 entradas long-term
+  - Sistema completamente integrado ✅
+
+- ✅ TESTE 5: Reset do sistema
+  - Reset funcionando corretamente
+  - Força reinicialização na próxima chamada ✅
+
+**Testado em:**
+- Data: 2026-02-06
+- Ambiente Local: Windows 11 (Node.js + tsx)
+- Ambiente VPS: Ubuntu (Node.js + tsx)
+- Comando Legacy: `npx tsx src/test-migration-wrapper.ts`
+- Comando Brain V2: `TURION_USE_BRAIN_V2=true ANTHROPIC_API_KEY=... npx tsx src/test-migration-wrapper.ts`
+- Resultado: ✅ 100% sucesso (5/5 testes em ambos os modos)
+- Performance: 6-11s por mensagem (Brain V2)
+
+**Observações importantes:**
+- Migration Wrapper funcionando perfeitamente em ambos os modos
+- Zero impacto no código legado (fallback seguro)
+- Singleton pattern otimizando performance (uma única inicialização)
+- Memory System integrado e funcional (contexto entre mensagens)
+- Actions sendo geradas corretamente (prontas para conectar aos executores)
+- Fallback automático em caso de erro no Brain V2
+
+### Breaking Changes
+❌ **Nenhum** - Sistema legado continua funcionando normalmente. Brain V2 é opt-in via feature flag.
+
+### Como ativar
+
+#### Opção 1: Ativar globalmente (via .env)
+```bash
+# Adicionar no .env
+TURION_USE_BRAIN_V2=true
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+#### Opção 2: Testar temporariamente
+```bash
+# Linux/Mac
+TURION_USE_BRAIN_V2=true npm run dev
+
+# Windows PowerShell
+$env:TURION_USE_BRAIN_V2="true"; npm run dev
+```
+
+#### Opção 3: Integrar no código WhatsApp (futuro STEP-06)
+```typescript
+import { processBrainMessage } from "./brain/migrationWrapper";
+
+// No handler de mensagens (whatsapp.ts)
+socket.ev.on("messages.upsert", async (event) => {
+  for (const message of event.messages) {
+    // ... validações existentes ...
+
+    // Tentar processar com Brain V2
+    const response = await processBrainMessage({
+      socket,
+      message: text,
+      userId: sender,
+      threadId,
+      from
+    });
+
+    if (response) {
+      // Brain V2 processou - enviar resposta
+      await socket.sendMessage(from, { text: response });
+      continue; // Pular fluxo legado
+    }
+
+    // Se response = null, continuar com fluxo legado
+    // ... código existente (handleBrain, handleCommand, etc) ...
+  }
+});
+```
+
+### Rollback
+Se houver problemas:
+
+```bash
+# Reverter commit
+git revert 67c9964
+
+# Ou voltar para main
+git checkout main
+git branch -D feature/step-05-migration-wrapper
+
+# Desativar via feature flag
+TURION_USE_BRAIN_V2=false  # ou remover do .env
+```
+
+### Métricas
+- **Linhas adicionadas:** ~402
+- **Linhas removidas:** 0
+- **Arquivos criados:** 4
+- **Arquivos modificados:** 1
+- **Migration strategy:** Gradual, zero-risk
+- **Fallback:** Automático em caso de erro
+
+### Benefícios
+
+1. **Zero Risk:** Sistema legado continua funcionando
+2. **Gradual:** Pode ativar por usuário/grupo/feature
+3. **A/B Testing:** Comparar V1 vs V2 em produção
+4. **Easy Rollback:** Apenas trocar feature flag
+5. **Performance:** Singleton pattern (lazy init)
+6. **Monitoring:** Estatísticas em tempo real
+
+### Próximo Step
+STEP-06: Conectar actions do Brain V2 aos executores legados (cronManager, emailClient, etc)
+
+---
+
 ## [STEP-04] Specialized Agents (ChatAgent + CronAgent)
 **Data:** 2026-02-06
 **Branch:** feature/step-04-agents
@@ -1075,6 +1371,7 @@ STEP-01: Message Gateway Base
 ## 📊 CHANGELOG RESUMIDO
 
 ### 2026-02-06
+- ✅ [STEP-05] Migration Wrapper (Gradual V1→V2) - testado e aprovado
 - ✅ [STEP-04] Specialized Agents (ChatAgent + CronAgent) - testado e aprovado
 - ✅ [STEP-03] Memory System (3-Layer) - testado e aprovado
 - ✅ [STEP-02] Brain Orchestrator - testado e aprovado
@@ -1108,6 +1405,11 @@ STEP-01: Message Gateway Base
 - `BaseAgent` - [STEP-02] Classe base abstrata para agentes
 - `ChatAgent` - [STEP-04] Agente de conversa casual com personalidade
 - `CronAgent` - [STEP-04] Agente de lembretes e tarefas agendadas
+
+### Migration System
+- `processBrainMessage` - [STEP-05] Wrapper principal para migração V1→V2
+- `getBrainSystemStats` - [STEP-05] Estatísticas do sistema ativo
+- `resetBrainSystem` - [STEP-05] Reset de instâncias (testes)
 
 ### Executors
 *Aguardando implementação*
@@ -1154,22 +1456,22 @@ WhatsApp → whatsapp.ts (monolítico) → Skills/Executor
 └─────────────────────────────────────────────────┘
 ```
 
-**Status atual:** V1.0 + V1.1.1 (Migração em progresso)
-**Progresso V1.1.1:** 14.3% (4/28 steps)
+**Status atual:** V1.0 + V1.1.1 (Migração em progresso - Wrapper ativo!)
+**Progresso V1.1.1:** 17.9% (5/28 steps)
 
 ---
 
 ## 📈 ESTATÍSTICAS
 
 ### Progresso Geral
-- **Steps concluídos:** 4/28 (14.3%)
-- **Fase atual:** Fase 1 - Fundação (Step 04/08)
-- **Estimativa de conclusão:** ~7 semanas
+- **Steps concluídos:** 5/28 (17.9%)
+- **Fase atual:** Fase 1 - Fundação (Step 05/08)
+- **Estimativa de conclusão:** ~6 semanas
 
 ### Código
-- **Linhas de código (novo):** ~1920
-- **Arquivos criados:** 24 (18 código + 6 scripts/docs)
-- **Arquivos modificados:** 2
+- **Linhas de código (novo):** ~2320
+- **Arquivos criados:** 28 (21 código + 7 scripts/docs)
+- **Arquivos modificados:** 3
 - **Cobertura de testes:** Manual (scripts de teste criados para cada step)
 
 ### Agentes
@@ -1195,15 +1497,17 @@ WhatsApp → whatsapp.ts (monolítico) → Skills/Executor
 1. [x] Revisar roadmap-v1.1.1.md
 2. [x] Configurar ambiente de desenvolvimento
 3. [x] Criar branch `feature/step-01-gateway`
-4. [ ] Implementar STEP-05 (Mais agentes especializados)
+4. [x] Implementar STEP-05 (Migration Wrapper)
+5. [ ] Implementar STEP-06 (Action Executors)
 
 ### Esta Semana (Semana 1)
 1. [x] Implementar STEP-01 (Gateway)
 2. [x] Implementar STEP-02 (Orchestrator)
 3. [x] Implementar STEP-03 (Memory)
 4. [x] Implementar STEP-04 (Specialized Agents)
-5. [ ] Implementar STEP-05 (EmailAgent, LogsAgent)
-6. [ ] Implementar STEP-06 (Migration Wrapper)
+5. [x] Implementar STEP-05 (Migration Wrapper)
+6. [ ] Implementar STEP-06 (Action Executors)
+7. [ ] Implementar STEP-07 (Feature Flags System)
 
 ### Este Mês (Fevereiro 2026)
 1. [ ] Completar Fase 1 (Fundação)
@@ -1259,6 +1563,6 @@ WhatsApp → whatsapp.ts (monolítico) → Skills/Executor
 
 ---
 
-**Última atualização:** 2026-02-06 (STEP-04)
-**Próximo update:** Após STEP-05
+**Última atualização:** 2026-02-06 (STEP-05)
+**Próximo update:** Após STEP-06
 **Mantenedor:** Equipe Turion
