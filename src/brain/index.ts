@@ -20,3 +20,6 @@ export type { LongTermEntry } from "./memory";
 
 // Specialized Agents (STEP-04)
 export { ChatAgent, CronAgent } from "./agents";
+
+// Migration Wrapper (STEP-05)
+export { processBrainMessage, getBrainSystemStats, resetBrainSystem } from "./migrationWrapper";
