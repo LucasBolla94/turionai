@@ -48,6 +48,7 @@ import { registerCronHandler } from "../core/cronManager";
 import { readLatestDigest } from "../core/conversationStore";
 import { getTimezone } from "../core/timezone";
 import { EmailSkill } from "../skills/emailSkill";
+import { processBrainMessage } from "../brain/migrationWrapper";
 import { clearPending, getPending, setPending } from "../core/pendingActions";
 import { loadEmailConfig } from "../core/emailStore";
 import { listEmails } from "../core/emailClient";
@@ -956,7 +957,24 @@ export async function initWhatsApp(): Promise<WASocket> {
         },
         );
       } else {
-        handleBrain(socket, from, threadId, text).catch((error) => {
+        // STEP-08: Tentar Brain V2 primeiro (Migration Wrapper)
+        processBrainMessage({
+          socket,
+          message: text,
+          userId: sender,
+          threadId,
+          from,
+        }).then(async (response) => {
+          if (response) {
+            // Brain V2 processou a mensagem
+            console.log("[Turion] Brain V2 processou a mensagem");
+            await sendAndLog(socket, from, threadId, response);
+          } else {
+            // Usar sistema legado
+            console.log("[Turion] Usando sistema legado");
+            return handleBrain(socket, from, threadId, text);
+          }
+        }).catch((error) => {
           console.error("[Turion] erro no brain:", error);
         });
       }
