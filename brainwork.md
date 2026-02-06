@@ -1,140 +1,222 @@
-# Brain Work - Como o Sistema Interpreta e Executa
+📋 Visão Geral do Projeto
+Turion é um assistente pessoal via WhatsApp que usa:
 
-Este documento explica, de forma simples e tecnica, como o Turion processa uma mensagem do usuario, decide a intencao e executa (ou nao) acoes.
+Canal: WhatsApp (biblioteca Baileys)
+IA: Grok (xAI) como principal + Anthropic Claude como secundário
+Execução: Docker/Compose
+Armazenamento: Arquivos JSON/JSONL locais
+🔄 FLUXO COMPLETO DE PROCESSAMENTO DE MENSAGENS
+1. RECEBIMENTO DA MENSAGEM
+whatsapp.ts:665
 
-## 1) Entrada da Mensagem (WhatsApp)
-Arquivo principal: `src/channels/whatsapp.ts`
 
-Fluxo simplificado:
-1) Mensagem chega do WhatsApp.
-2) Validacoes rapidas (owner setup, pending actions, comandos diretos).
-3) Classificacao inicial (pipeline) para decidir se e `COMMAND`, `CHAT` ou `UNKNOWN`.
-4) Se for conversa, envia ao Brain (Grok interpreta JSON).
-5) A resposta final ao usuario e gerada pela Anthropic (Sonnet) quando configurada.
-6) Resultado pode gerar:
-   - resposta
-   - execucao de Skill
-   - plano com varias Skills
-   - pedido de confirmacao
+Usuário envia msg → WhatsApp (Baileys) → evento "messages.upsert"
+Validações iniciais:
 
-## Configuracao de APIs
-- XAI_API_KEY: obrigatoria para interpretar intencoes (Grok).
-- ANTHROPIC_API_KEY: opcional; quando configurada, gera respostas finais (Sonnet).
-- Fallback: se Anthropic falhar/nao estiver configurada, Grok responde.
-- Indicadores: ?? Anthropic e ?? Grok no inicio da resposta.
+✅ Verifica se não é mensagem enviada pelo bot (fromMe)
+✅ Verifica se já foi processada (deduplicação via seenMessages)
+✅ Verifica autorização (allowlist ou owner)
+✅ Extrai o texto da mensagem
+⏳ Inicia indicador de "digitando..."
+2. CLASSIFICAÇÃO DA MENSAGEM
+messagePipeline.ts:51
 
-## 2) Classificacao Rapida (Message Pipeline)
-Arquivo: `src/core/messagePipeline.ts`
+A função classifyMessage() determina o intent básico:
 
-Funcao:
-- Separar comandos diretos (`--status`, `logs`, `deploy` etc.).
-- Extrair args simples.
-- Evitar gastar tokens do Brain em mensagens obvias.
 
-## 3) Brain (Grok) - Interpretacao de Intencao
-Arquivo: `src/core/brain.ts`
+COMMAND  → começa com / ou -- ou palavra-chave (deploy, logs, cron, etc)
+CHAT     → saudações (oi, olá, bom dia, etc)
+UNKNOWN  → qualquer outra coisa
+Exemplo:
 
-Como funciona:
-- Envia um prompt do sistema para o Grok com regras estritas.
-- O Grok retorna JSON obrigatorio (intent, args, action, reply, etc.).
-- A resposta final ao usuario e gerada pela Anthropic (Sonnet) quando configurada.
-- Se a Anthropic falhar ou nao estiver configurada, o Grok responde (fallback).
-- O sistema nunca executa comandos diretamente do Brain sem validacao.
+/status → COMMAND
+Oi, tudo bem? → CHAT
+Configure meu email → UNKNOWN (vai pro brain)
+3. ROTEAMENTO
+whatsapp.ts:936-962
 
-### Exemplo de saida esperada do Brain (JSON)
-```json
-{
-  "intent": "CRON_CREATE",
-  "args": {
-    "action": "create",
-    "name": "reminder_1700000000",
-    "jobType": "reminder",
-    "schedule": "2026-02-05T12:00:00.000Z",
-    "payload": "{"to":"5511999999999","message":"beber agua"}",
-    "runOnce": true
-  },
-  "needs_confirmation": false,
-  "action": "RUN_SKILL",
-  "reply": "Fechado, vou te lembrar em 10 minutos..."
+
+if (result.intent === "COMMAND") {
+    → handleCommand()  // Executa comandos diretos
+} else {
+    → handleBrain()    // Processa via IA
 }
-```
+4. PROCESSAMENTO PELA IA (handleBrain)
+whatsapp.ts:1498-2111
+
+Aqui acontece a MÁGICA 🧠:
+
+4.1. Preparação do Contexto
+whatsapp.ts:1824-1845
+
+Coleta informações para enviar à IA:
 
 
-## 3.1) Response Router (Grok vs Anthropic)
-Arquivo: `src/core/responseRouter.ts`
+📌 Timestamp atual + timezone
+📌 Resumo da conversa (digest) - últimas 5 mensagens
+📌 Contexto de memória (facts, projetos, decisões)
+📌 Mensagem do usuário
+4.2. Interpretação pela IA
+brain.ts:214-271 - interpretStrictJson()
 
-- Usa heuristicas + preferencias do usuario para decidir quem responde.
-- Mensagens simples -> Grok. Mensagens complexas -> Anthropic.
-- Aprende com o usuario (bias salvo em `state/router/router_state.json`).
-- Exemplo de sinais de complexidade: texto longo, logs/bugs, multi-etapas, plano com varias skills.
+Fluxo duplo de IA:
 
-## 4) Decisao e Execucao
-Arquivo: `src/channels/whatsapp.ts`
 
-Regras principais:
-- Se `needs_confirmation = true`, o sistema salva como `pending` e aguarda "sim".
-- Se `RUN_SKILL`, chama a skill adequada (ex: `CronSkill`, `SupabaseSkill`).
-- Se `RUN_PLAN`, executa varias skills em sequencia.
-- Se houver erro, tenta auto-correcoes (logs/diagnostico).
+1️⃣ PRIMEIRA CHAMADA - Grok (xAI):
+   └─ Recebe: todo o contexto montado
+   └─ Retorna: JSON estruturado com:
+       {
+         intent: "EMAIL_LIST",
+         args: { action: "list", limit: 10 },
+         needs_confirmation: false,
+         action: "RUN_SKILL",
+         reply: "Vou listar seus emails...",
+         missing: [],
+         questions: []
+       }
 
-## 5) Pending Actions (Confirmacoes e Fluxos)
-Arquivos: `src/core/pendingActions.ts` e `src/channels/whatsapp.ts`
+2️⃣ SEGUNDA CHAMADA - Claude (Anthropic) [OPCIONAL]:
+   └─ Se responseRouter decidir usar Anthropic
+   └─ Recebe: resultado do Grok + mensagem original
+   └─ Refina o reply (resposta mais natural)
+   └─ Retorna: texto polido em português
+Prompts usados:
 
-Exemplos:
-- OWNER_SETUP (onboarding).
-- EMAIL_CONNECT_FLOW (email).
-- EMAIL_DELETE_PICK/CONFIRM (quando ha ambiguidade).
-- RUN_UPDATE (update).
+Grok:
 
-## 6) Skills (Acoes Reais)
-Diretorio: `src/skills/`
+Nome do assistente
+Estrutura de resposta (reconhecimento + resposta + exemplo + próximo passo)
+Regras de formatação JSON
+Mapeamento de intents (EMAIL_, CRON_, SUPABASE_*, etc)
+Limites de segurança (apenas logs/ e state/)
+Claude:
 
-Cada Skill executa algo especifico:
-- `CronSkill` -> lembretes e crons
-- `EmailSkill` -> Gmail/iCloud
-- `SupabaseSkill` -> SQL seguro e buckets
-- `LogsSkill`, `DeploySkill`, `ScriptSkill`, etc.
+Recebe o JSON do Grok
+Foca em melhorar a resposta (reply)
+Mantém tom amigável e profissional
+5. DECISÃO DE AÇÃO
+whatsapp.ts:1846-2110
 
-As skills sao acionadas pelo Brain ou por comandos diretos do usuario.
+Com base no resultado da IA, o sistema decide:
 
-## 7) Executor de Scripts
-Arquivo: `src/executor/executor.ts`
+5.1. Se action = "NONE"
 
-Regras:
-- Executa apenas scripts em `scripts/` com extensao `.sh` ou `.ps1`.
-- Bloqueia extensoes nao permitidas.
-- Controla tempo limite para evitar travas.
+→ Apenas envia reply (resposta de chat)
+→ FIM
+5.2. Se action = "ASK"
 
-## 8) Cron e Automacoes
-Arquivo: `src/core/cronManager.ts`
+→ Envia reply com perguntas
+→ Armazena pending action
+→ Aguarda resposta do usuário
+→ FIM
+5.3. Se action = "RUN_SKILL"
 
-- Gerencia jobs (ex: reminders, email_monitor, update_check_5m).
-- Jobs essenciais sao auto-verificados e auto-iniciados.
+→ Verifica needs_confirmation
+   ├─ SIM: Armazena pending → Envia "Confirma?"
+   └─ NÃO: Executa skill imediatamente
+5.4. Se action = "RUN_PLAN"
 
-## 9) Update do Sistema
-Arquivos: `src/core/updateAuto.ts`, `scripts/update_check.sh`, `scripts/update_self.sh`
+→ Executa múltiplas skills em sequência
+→ Cada skill no array plan[]
+6. EXECUÇÃO DE SKILLS
+registry.ts + planRunner.ts
 
-Fluxo:
-- Checa se ha update.
-- Se houver, aplica update e reinicia.
-- Mensagens deixam claro que o update e do proprio sistema.
+Skills disponíveis:
 
-## 10) Memoria e Contexto
-Arquivos:
-- `src/core/memoryStore.ts`
-- `src/core/conversationStore.ts`
+StatusSkill: info do sistema
+ScriptSkill: executa scripts
+DeploySkill: deploy de projetos
+LogsSkill: lê logs
+CronSkill: gerencia cron jobs
+EmailSkill: gerencia emails
+SupabaseSkill: queries no Supabase
+Exemplo de execução:
 
-O Brain usa:
-- Memoria do usuario
-- Conversas recentes
-- Digest diario
 
-Isso permite entender contexto ("faz igual ontem", "isso ai").
+// IA retornou: { intent: "EMAIL_LIST", action: "RUN_SKILL" }
+const skill = findSkillByIntent("EMAIL_LIST")  // → EmailSkill
+const result = await skill.execute(
+    { action: "list", limit: 10, unreadOnly: true },
+    { platform: "linux" }
+)
+// result = { ok: true, output: "📧 Você tem 3 emails..." }
+7. RESPOSTA FINAL
+whatsapp.ts:2113 - sendAndLog()
 
-## 11) Resumo do Fluxo
-```
-Mensagem -> Pipeline -> Brain (JSON) -> Validacao -> Skill/Plano -> Resposta
-```
 
-Se der erro:
-- O sistema tenta auto-correcao com logs e diagnostico de IA.
+1. Polish reply (aplica estilo do usuário via behavior.ts)
+2. Envia mensagem no WhatsApp
+3. Registra na conversação (JSONL)
+4. Para indicador "digitando..."
+🎯 EXEMPLO COMPLETO DE FLUXO
+Usuário: "Me lembra em 10 minutos de ligar pro João"
+
+
+1️⃣ RECEBIMENTO
+   └─ WhatsApp captura → valida autorização
+
+2️⃣ CLASSIFICAÇÃO
+   └─ classifyMessage() → intent: UNKNOWN
+
+3️⃣ ROTEAMENTO
+   └─ handleBrain()
+
+4️⃣ CONTEXTO
+   └─ Monta: timestamp, conversas recentes, memória
+
+5️⃣ IA (Grok)
+   └─ Interpreta: "criar lembrete de 10min"
+   └─ Retorna JSON:
+       {
+         intent: "CRON_CREATE",
+         action: "RUN_SKILL",
+         args: {
+           jobType: "reminder",
+           schedule: "2026-02-06T15:23:00Z",
+           payload: '{"to":"5511999...", "message":"ligar pro João"}',
+           runOnce: true
+         },
+         reply: "🅣 Fechado. Vou te lembrar em 10 minutos.",
+         needs_confirmation: false
+       }
+
+6️⃣ EXECUÇÃO
+   └─ CronSkill.execute()
+   └─ Cria cron job → salva em state/crons/
+
+7️⃣ RESPOSTA
+   └─ Envia: "🅣 Fechado. Vou te lembrar em 10 minutos. Agora são 15:13."
+   └─ Registra conversação
+🔐 SISTEMA DE CONFIRMAÇÃO (Pending Actions)
+pendingActions.ts
+
+Quando needs_confirmation: true:
+
+
+1. Armazena pending action em state/pending/
+2. Envia "Confirma? Me responde com 'sim' ou 'nao'."
+3. Aguarda próxima mensagem
+4. Se "sim" → executa pending
+5. Se "não" → limpa pending
+💾 PERSISTÊNCIA DE DADOS
+Todo processamento gera logs:
+
+Conversações: state/conversations/YYYY-MM-DD/thread_*.jsonl
+Memória: state/memory/memory.json
+Auditorias: state/audit/YYYY-MM-DD.jsonl
+Crons: state/crons/crons.json
+Digests: state/digests/YYYY-MM-DD.json
+🧠 PONTOS-CHAVE DO DESIGN
+✅ Dupla IA: Grok interpreta estrutura + Claude refina linguagem
+
+✅ JSON estrito: Toda decisão é estruturada e auditável
+
+✅ Skills modulares: Fácil adicionar novas funcionalidades
+
+✅ Confirmação de risco: Ações destrutivas exigem confirmação
+
+✅ Contexto conversacional: Lembra últimas mensagens e memórias
+
+✅ Auditoria completa: Tudo é logado para troubleshooting
+
+Esse é o fluxo completo! A arquitetura é bem pensada: mensagem → classificação → IA estrutural (Grok) → refinamento opcional (Claude) → execução de skills → resposta. Tudo auditado e persistido. 🚀
