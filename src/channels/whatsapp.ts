@@ -17,7 +17,7 @@ import { listScripts, runScript } from "../executor/executor";
 import { createCron, createCronNormalized, listCrons, pauseCron, removeCron } from "../core/cronManager";
 import os from "node:os";
 import {
-  checkXaiHealth,
+  checkAiHealth,
   diagnoseLogs,
   explainEmailSecurity,
   interpretOnboardingAnswer,
@@ -2273,16 +2273,16 @@ function parseApiStatusRequest(text: string): boolean {
 }
 
 async function buildApiStatusResponse(): Promise<string> {
-  const xai = await checkXaiHealth();
+  const ai = await checkAiHealth();
   const supabase = await checkSupabaseHealth();
   const email = await checkEmailHealth();
   const lines = ["Status das APIs:"];
-  if (xai.ok) {
-    lines.push("- Grok: OK");
-  } else if (xai.message.includes("XAI_API_KEY")) {
-    lines.push("- Grok: chave nao configurada");
+  if (ai.ok) {
+    lines.push("- Anthropic: OK");
+  } else if (ai.message.includes("ANTHROPIC_API_KEY")) {
+    lines.push("- Anthropic: chave nao configurada");
   } else {
-    lines.push(`- Grok: erro (${xai.message})`);
+    lines.push(`- Anthropic: erro (${ai.message})`);
   }
   if (supabase.ok) {
     lines.push("- Supabase: OK");
@@ -2299,8 +2299,8 @@ async function buildApiStatusResponse(): Promise<string> {
   lines.push("- WhatsApp: online");
 
   const fixes: string[] = [];
-  if (!xai.ok && xai.message.includes("XAI_API_KEY")) {
-    fixes.push("Envie sua XAI_API_KEY para eu validar na hora.");
+  if (!ai.ok && ai.message.includes("ANTHROPIC_API_KEY")) {
+    fixes.push("Envie sua ANTHROPIC_API_KEY para eu validar na hora.");
   }
   if (!supabase.ok && supabase.message.includes("nao configurado")) {
     fixes.push("Preencha SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env.");
