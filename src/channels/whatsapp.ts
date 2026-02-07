@@ -376,11 +376,25 @@ async function attemptAutoFix(
 ): Promise<boolean> {
   const cleaned = errorMessage.trim();
   if (!cleaned) return false;
+
+  // Detectar erros de autenticacao da API — avisar direto sem tentar usar a IA
+  if (/authentication_error|invalid.*api.key|401|ANTHROPIC_API_KEY/i.test(cleaned)) {
+    await sendAndLog(
+      socket,
+      to,
+      threadId,
+      "Parece que sua chave da Anthropic esta invalida ou nao foi configurada.\n\nPra resolver, me envie sua chave (comeca com sk-ant-) aqui no chat, ou edite o arquivo .env no servidor:\n\nnano /opt/turion/.env\n\nDepois reinicie: docker compose restart",
+      { polish: false },
+    );
+    return true;
+  }
+
   await sendAndLog(
     socket,
     to,
     threadId,
-    `Deu um erro em ${cleaned}. Vou arrumar fazendo: ler logs, interpretar e aplicar correcoes seguras.`,
+    `Deu um erro: ${cleaned}. Vou tentar diagnosticar.`,
+    { polish: false },
   );
 
   if (/ENOENT/.test(cleaned) && /logs/i.test(cleaned)) {
@@ -388,22 +402,23 @@ async function attemptAutoFix(
       const { mkdir, writeFile } = await import("node:fs/promises");
       await mkdir(resolve("logs"), { recursive: true });
       await writeFile(resolve("logs", "error.log"), "", { flag: "a" });
-      await sendAndLog(socket, to, threadId, "Fazendo... criei a pasta de logs e o arquivo base.");
+      await sendAndLog(socket, to, threadId, "Criei a pasta de logs e o arquivo base.", { polish: false });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "falha ao criar logs";
-      await sendAndLog(socket, to, threadId, `Nao consegui corrigir automaticamente: ${message}`);
+      await sendAndLog(socket, to, threadId, `Nao consegui corrigir automaticamente: ${message}`, { polish: false });
       return true;
     }
   }
 
   const logs = await readLocalLogSnippet();
-  if (!logs || !process.env.XAI_API_KEY) {
+  if (!logs || !process.env.ANTHROPIC_API_KEY) {
     await sendAndLog(
       socket,
       to,
       threadId,
-      "Agora vou precisar que voce me ajude: nao encontrei logs locais ou falta a chave da IA.",
+      "Nao encontrei logs locais ou a chave da IA nao esta configurada. Me envia sua ANTHROPIC_API_KEY (comeca com sk-ant-) aqui no chat.",
+      { polish: false },
     );
     return true;
   }
@@ -2131,7 +2146,7 @@ async function handleBrain(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Falha no interpretador.";
-    await sendAndLog(socket, to, threadId, `Erro IA: ${message}`);
+    await sendAndLog(socket, to, threadId, `Erro IA: ${message}`, { polish: false });
     await attemptAutoFix(socket, to, threadId, message);
   }
 }
