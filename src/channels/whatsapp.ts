@@ -605,19 +605,24 @@ export async function initWhatsApp(): Promise<WASocket> {
 
     if (qr) {
       const owner = await getOwnerState();
-      if (!owner?.owner_jid) {
-        const code = await ensurePairingCode();
-        console.log(`[Tur] Codigo de pareamento: ${code}`);
-      }
       const now = Date.now();
       const recentlyShown = lastQr && now - lastQrAt < 15 * 1000;
       if (!recentlyShown && qr !== lastQr) {
         lastQr = qr;
         lastQrAt = now;
-        console.log("[Tur] Novo QR Code gerado. Use imediatamente.");
         const qrText = await qrcode.toString(qr, { type: "terminal" });
         console.log(qrText);
-        console.log("[Tur] Escaneie o QR Code acima com o WhatsApp.");
+        console.log("  Escaneie o QR Code acima com o WhatsApp.");
+        console.log("  (WhatsApp > Menu > Aparelhos conectados > Conectar)");
+        if (!owner?.owner_jid) {
+          const code = await ensurePairingCode();
+          console.log("");
+          console.log("  ================================================");
+          console.log(`  SUA SENHA DE ATIVACAO:  ${code}`);
+          console.log("  ================================================");
+          console.log("  Envie essa senha no WhatsApp apos escanear o QR.");
+          console.log("");
+        }
         if (qrTimer) clearTimeout(qrTimer);
         qrTimer = setTimeout(async () => {
           const elapsed = Date.now() - lastQrAt;
@@ -632,7 +637,16 @@ export async function initWhatsApp(): Promise<WASocket> {
     }
 
     if (connection === "open") {
-      console.log("[Turion] WhatsApp conectado.");
+      console.log("[Turion] WhatsApp conectado com sucesso!");
+      const ownerCheck = await getOwnerState();
+      if (!ownerCheck?.owner_jid) {
+        const pin = ownerCheck?.pairing_code ?? (await ensurePairingCode());
+        console.log("");
+        console.log("  ================================================");
+        console.log(`  ENVIE NO WHATSAPP A SENHA:  ${pin}`);
+        console.log("  ================================================");
+        console.log("");
+      }
       lastQr = null;
       lastQrAt = 0;
       if (qrTimer) {
@@ -876,8 +890,8 @@ export async function initWhatsApp(): Promise<WASocket> {
           from,
           threadId,
           isEnglish
-            ? "Hi there! To get started, I need the pairing code shown in the terminal. Can you check there for me?"
-            : "Oi! Pra gente comecar, preciso que voce me envie o codigo de pareamento que apareceu no terminal. Da uma olhada la?",
+            ? "Hey! To confirm you're the owner, send me the *4-digit PIN* shown in the terminal right after the QR code."
+            : "Oi! Pra confirmar que voce e o dono, me envia a *senha de 4 digitos* que apareceu no terminal logo depois do QR code.",
           { polish: false },
         );
         continue;

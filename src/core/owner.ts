@@ -73,10 +73,10 @@ export async function saveOwnerState(state: OwnerState): Promise<void> {
 
 export async function ensurePairingCode(): Promise<string> {
   const existing = await loadOwnerState();
-  if (existing?.pairing_code) {
+  if (existing?.pairing_code && existing.pairing_code.length === 4) {
     return existing.pairing_code;
   }
-  const code = String(randomInt(100000, 999999));
+  const code = String(randomInt(1000, 9999));
   const payload: OwnerState = {
     ...(existing ?? { created_at: new Date().toISOString() }),
     pairing_code: code,
