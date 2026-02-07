@@ -149,11 +149,12 @@ update_system() {
 
     if command -v apt-get &> /dev/null; then
         print_substep "Detectado: Debian/Ubuntu"
+        print_substep "Executando apt-get update..."
         $SUDO apt-get update -qq > /dev/null 2>&1
-        show_progress 1 2
-        $SUDO DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq > /dev/null 2>&1
-        show_progress 2 2
-        echo ""
+        print_substep "Executando apt-get upgrade (pode demorar alguns minutos)..."
+        $SUDO DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq \
+            -o Dpkg::Options::="--force-confdef" \
+            -o Dpkg::Options::="--force-confold" > /dev/null 2>&1
         print_success "Sistema atualizado"
 
     elif command -v yum &> /dev/null; then
