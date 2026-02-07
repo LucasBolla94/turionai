@@ -1,6 +1,4 @@
 #!/bin/bash
-set -euo pipefail  # Exit on error, undefined vars, pipe fails
-
 # ============================================================================
 #   ████████╗██╗   ██╗██████╗ ██╗ ██████╗ ███╗   ██╗
 #   ╚══██╔══╝██║   ██║██╔══██╗██║██╔═══██╗████╗  ██║
@@ -12,42 +10,43 @@ set -euo pipefail  # Exit on error, undefined vars, pipe fails
 #   Instalador Profissional - V1.1.1
 #   Linux / macOS
 #
+#   Uso: curl -fsSL https://raw.githubusercontent.com/LucasBolla94/turionai/main/install.sh | sudo bash
+#
 # ============================================================================
 
-# ===== CONFIGURAÇÕES =====
+set -eo pipefail
+
+# ===== CONFIGURACOES =====
 TURION_DIR="/opt/turion"
 TURION_REPO="https://github.com/LucasBolla94/turionai.git"
 TURION_UID=1001
 TURION_GID=1001
 MIN_DISK_MB=2048
 
-# ===== CORES E FORMATAÇÃO =====
+# ===== CORES =====
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 BOLD='\033[1m'
 DIM='\033[0;2m'
 NC='\033[0m'
 
-# ===== FUNÇÕES DE PRINT =====
+# ===== FUNCOES DE PRINT =====
 
 print_header() {
     clear
     echo -e "${CYAN}"
-    cat << "EOF"
-    ████████╗██╗   ██╗██████╗ ██╗ ██████╗ ███╗   ██╗
-    ╚══██╔══╝██║   ██║██╔══██╗██║██╔═══██╗████╗  ██║
-       ██║   ██║   ██║██████╔╝██║██║   ██║██╔██╗ ██║
-       ██║   ██║   ██║██╔══██╗██║██║   ██║██║╚██╗██║
-       ██║   ╚██████╔╝██║  ██║██║╚██████╔╝██║ ╚████║
-       ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝
-EOF
+    echo '    ████████╗██╗   ██╗██████╗ ██╗ ██████╗ ███╗   ██╗'
+    echo '    ╚══██╔══╝██║   ██║██╔══██╗██║██╔═══██╗████╗  ██║'
+    echo '       ██║   ██║   ██║██████╔╝██║██║   ██║██╔██╗ ██║'
+    echo '       ██║   ██║   ██║██╔══██╗██║██║   ██║██║╚██╗██║'
+    echo '       ██║   ╚██████╔╝██║  ██║██║╚██████╔╝██║ ╚████║'
+    echo '       ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝'
     echo -e "${NC}"
-    echo -e "${WHITE}        🤖 Assistente Pessoal via WhatsApp${NC}"
-    echo -e "${DIM}           Versão 1.1.1 - Instalação Profissional${NC}"
+    echo -e "${WHITE}        Assistente Pessoal via WhatsApp${NC}"
+    echo -e "${DIM}           Versao 1.1.1 - Instalacao Profissional${NC}"
     echo ""
 }
 
@@ -61,80 +60,74 @@ print_substep() {
 }
 
 print_success() {
-    echo -e "${GREEN}✓${NC} $1"
+    echo -e "  ${GREEN}✓${NC} $1"
 }
 
 print_warning() {
-    echo -e "${YELLOW}⚠${NC} $1"
+    echo -e "  ${YELLOW}⚠${NC} $1"
 }
 
 print_error() {
-    echo -e "${RED}✗${NC} $1"
+    echo -e "  ${RED}✗${NC} $1"
 }
 
 print_box() {
     local text="$1"
     local color="${2:-$GREEN}"
-    local width=60
-
     echo ""
-    echo -e "${color}╔$(printf '═%.0s' {1..60})╗${NC}"
-    printf "${color}║${NC}%*s${color}║${NC}\n" $(((${#text}+$width)/2)) "$text"
-    echo -e "${color}╚$(printf '═%.0s' {1..60})╝${NC}"
+    echo -e "${color}══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${color}  ${text}${NC}"
+    echo -e "${color}══════════════════════════════════════════════════════════════${NC}"
     echo ""
 }
 
-show_progress() {
-    local current=$1
-    local total=$2
-    local width=50
-    local percentage=$((current * 100 / total))
-    local completed=$((width * current / total))
+# ===== FASE 1: VALIDACOES =====
 
-    printf "\r  ["
-    printf "%${completed}s" | tr ' ' '█'
-    printf "%$((width - completed))s" | tr ' ' '░'
-    printf "] ${percentage}%%"
-}
+check_root() {
+    print_step "Verificando privilegios..."
 
-# ===== VALIDAÇÕES INICIAIS =====
-
-check_root_or_sudo() {
-    print_step "Verificando privilégios..."
-
-    if [ "$EUID" -eq 0 ]; then
-        SUDO=""
-        print_substep "Executando como root"
-    else
-        if ! command -v sudo &> /dev/null; then
-            print_error "sudo não está instalado"
-            exit 1
-        fi
-        SUDO="sudo"
-        print_substep "Usando sudo"
-    fi
-
-    print_success "Privilégios OK"
-}
-
-check_disk_space() {
-    print_step "Verificando espaço em disco..."
-
-    local available_mb=$(df / | tail -1 | awk '{print int($4/1024)}')
-
-    if [ "$available_mb" -lt "$MIN_DISK_MB" ]; then
-        print_error "Espaço insuficiente: ${available_mb}MB disponível, ${MIN_DISK_MB}MB necessário"
+    if [ "$(id -u)" -ne 0 ]; then
+        print_error "Este script precisa ser executado como root (use sudo)"
+        echo ""
+        echo -e "  Execute: ${BOLD}curl -fsSL https://raw.githubusercontent.com/LucasBolla94/turionai/main/install.sh | sudo bash${NC}"
         exit 1
     fi
 
-    print_substep "${available_mb}MB disponível"
-    print_success "Espaço em disco OK"
+    print_success "Executando como root"
+}
+
+check_os() {
+    print_step "Verificando sistema operacional..."
+
+    if [ ! -f /etc/os-release ]; then
+        print_error "Sistema operacional nao suportado (sem /etc/os-release)"
+        exit 1
+    fi
+
+    . /etc/os-release
+    print_substep "Detectado: ${PRETTY_NAME:-$ID}"
+    print_success "Sistema operacional OK"
+}
+
+check_disk_space() {
+    print_step "Verificando espaco em disco..."
+
+    local available_mb
+    available_mb=$(df / | tail -1 | awk '{print int($4/1024)}')
+
+    if [ "$available_mb" -lt "$MIN_DISK_MB" ]; then
+        print_error "Espaco insuficiente: ${available_mb}MB disponivel, ${MIN_DISK_MB}MB necessario"
+        exit 1
+    fi
+
+    print_substep "${available_mb}MB disponivel"
+    print_success "Espaco em disco OK"
 }
 
 check_connectivity() {
     print_step "Verificando conectividade..."
 
-    if ! curl -fsSL --connect-timeout 5 https://github.com > /dev/null 2>&1; then
+    if ! curl -fsSL --connect-timeout 10 https://github.com > /dev/null 2>&1; then
         print_error "Sem conectividade com GitHub"
         exit 1
     fi
@@ -142,373 +135,376 @@ check_connectivity() {
     print_success "Conectividade OK"
 }
 
-# ===== ATUALIZAÇÃO DO SISTEMA =====
+# ===== FASE 2: UPDATE DO SISTEMA =====
 
 update_system() {
-    print_step "Atualizando sistema (update & upgrade)..."
+    print_step "Atualizando sistema..."
 
-    if command -v apt-get &> /dev/null; then
-        print_substep "Detectado: Debian/Ubuntu"
+    if command -v apt-get > /dev/null 2>&1; then
         print_substep "Executando apt-get update..."
-        $SUDO apt-get update -qq > /dev/null 2>&1
-        print_substep "Executando apt-get upgrade (pode demorar alguns minutos)..."
-        $SUDO DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq \
+        apt-get update -qq > /dev/null 2>&1
+        print_substep "Executando apt-get upgrade (pode demorar)..."
+        DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq \
             -o Dpkg::Options::="--force-confdef" \
             -o Dpkg::Options::="--force-confold" > /dev/null 2>&1
-        print_success "Sistema atualizado"
+        print_success "Sistema atualizado (apt)"
 
-    elif command -v yum &> /dev/null; then
-        print_substep "Detectado: CentOS/RHEL"
-        $SUDO yum update -y -q > /dev/null 2>&1
-        print_success "Sistema atualizado"
+    elif command -v yum > /dev/null 2>&1; then
+        print_substep "Executando yum update..."
+        yum update -y -q > /dev/null 2>&1
+        print_success "Sistema atualizado (yum)"
+
+    elif command -v dnf > /dev/null 2>&1; then
+        print_substep "Executando dnf update..."
+        dnf update -y -q > /dev/null 2>&1
+        print_success "Sistema atualizado (dnf)"
 
     else
-        print_warning "Gerenciador de pacotes não reconhecido, pulando update"
+        print_warning "Gerenciador de pacotes nao reconhecido, pulando update"
     fi
 }
 
-# ===== INSTALAÇÃO DE DEPENDÊNCIAS =====
+# ===== FASE 3: DEPENDENCIAS =====
 
 install_dependencies() {
-    print_step "Instalando dependências..."
+    print_step "Instalando dependencias..."
 
-    local deps_to_install=()
-
-    if ! command -v git &> /dev/null; then
-        deps_to_install+=("git")
+    if command -v apt-get > /dev/null 2>&1; then
+        apt-get install -y -qq git curl ca-certificates gnupg lsb-release > /dev/null 2>&1
+    elif command -v yum > /dev/null 2>&1; then
+        yum install -y -q git curl ca-certificates > /dev/null 2>&1
+    elif command -v dnf > /dev/null 2>&1; then
+        dnf install -y -q git curl ca-certificates > /dev/null 2>&1
     fi
 
-    if ! command -v curl &> /dev/null; then
-        deps_to_install+=("curl")
+    # Verificar se git e curl estao instalados
+    if ! command -v git > /dev/null 2>&1; then
+        print_error "Falha ao instalar git"
+        exit 1
     fi
 
-    if [ ${#deps_to_install[@]} -gt 0 ]; then
-        if command -v apt-get &> /dev/null; then
-            print_substep "Instalando: ${deps_to_install[*]}"
-            $SUDO apt-get install -y -qq "${deps_to_install[@]}" ca-certificates > /dev/null 2>&1
-        elif command -v yum &> /dev/null; then
-            $SUDO yum install -y -q "${deps_to_install[@]}" ca-certificates > /dev/null 2>&1
-        fi
-        print_success "Dependências instaladas"
-    else
-        print_success "Dependências já instaladas"
+    if ! command -v curl > /dev/null 2>&1; then
+        print_error "Falha ao instalar curl"
+        exit 1
     fi
+
+    print_success "Dependencias instaladas (git, curl, ca-certificates)"
 }
 
-# ===== INSTALAÇÃO DOCKER =====
+# ===== FASE 4: DOCKER =====
 
 install_docker() {
-    print_step "Verificando Docker..."
+    print_step "Instalando Docker..."
 
-    if command -v docker &> /dev/null && docker --version > /dev/null 2>&1; then
-        print_success "Docker já instalado ($(docker --version | cut -d' ' -f3 | tr -d ','))"
-        return 0
-    fi
+    if command -v docker > /dev/null 2>&1 && docker info > /dev/null 2>&1; then
+        local docker_ver
+        docker_ver=$(docker --version | cut -d' ' -f3 | tr -d ',')
+        print_success "Docker ja instalado (${docker_ver})"
+    else
+        print_substep "Baixando e instalando Docker..."
 
-    print_substep "Docker não encontrado, instalando..."
+        curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+        sh /tmp/get-docker.sh > /dev/null 2>&1
+        rm -f /tmp/get-docker.sh
 
-    if ! curl -fsSL https://get.docker.com -o /tmp/get-docker.sh 2>&1; then
-        print_error "Falha ao baixar instalador Docker"
-        exit 1
-    fi
-
-    if ! $SUDO sh /tmp/get-docker.sh > /dev/null 2>&1; then
-        print_error "Falha ao instalar Docker"
-        exit 1
-    fi
-
-    $SUDO usermod -aG docker "$USER" || true
-
-    print_success "Docker instalado"
-}
-
-wait_for_docker() {
-    print_step "Aguardando Docker iniciar..."
-
-    local max_attempts=30
-    local attempt=0
-
-    while [ $attempt -lt $max_attempts ]; do
-        if docker ps > /dev/null 2>&1; then
-            print_success "Docker está funcionando"
-            return 0
+        if ! command -v docker > /dev/null 2>&1; then
+            print_error "Falha ao instalar Docker"
+            exit 1
         fi
 
-        if $SUDO docker ps > /dev/null 2>&1; then
-            print_warning "Docker precisa de sudo (faça logout/login para usar sem sudo)"
-            return 0
-        fi
+        print_success "Docker instalado"
+    fi
 
+    # Garantir que o servico esta rodando
+    print_substep "Iniciando servico Docker..."
+
+    if command -v systemctl > /dev/null 2>&1; then
+        systemctl enable docker > /dev/null 2>&1 || true
+        systemctl start docker > /dev/null 2>&1 || true
+    elif command -v service > /dev/null 2>&1; then
+        service docker start > /dev/null 2>&1 || true
+    fi
+
+    # Aguardar Docker ficar pronto
+    local attempts=0
+    while [ $attempts -lt 30 ]; do
+        if docker info > /dev/null 2>&1; then
+            print_success "Docker esta funcionando"
+            break
+        fi
         sleep 2
-        attempt=$((attempt + 1))
+        attempts=$((attempts + 1))
     done
 
-    print_error "Docker não iniciou após ${max_attempts} tentativas"
-    return 1
+    if [ $attempts -ge 30 ]; then
+        print_error "Docker nao iniciou apos 60 segundos"
+        exit 1
+    fi
 }
 
 install_docker_compose() {
     print_step "Verificando Docker Compose..."
 
     if docker compose version > /dev/null 2>&1; then
-        print_success "Docker Compose já instalado"
+        print_success "Docker Compose ja instalado"
         return 0
     fi
 
     print_substep "Instalando Docker Compose plugin..."
 
-    if command -v apt-get &> /dev/null; then
-        $SUDO apt-get install -y -qq docker-compose-plugin > /dev/null 2>&1 || true
-
-        if docker compose version > /dev/null 2>&1; then
-            print_success "Docker Compose instalado"
-            return 0
-        fi
+    # Tentar via apt
+    if command -v apt-get > /dev/null 2>&1; then
+        apt-get install -y -qq docker-compose-plugin > /dev/null 2>&1 || true
     fi
-
-    print_substep "Instalando Docker Compose manualmente..."
-
-    local compose_version="2.30.3"
-    local os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-    local arch="$(uname -m)"
-
-    case "$arch" in
-        x86_64|amd64) arch="x86_64" ;;
-        aarch64|arm64) arch="aarch64" ;;
-    esac
-
-    local docker_config="${DOCKER_CONFIG:-$HOME/.docker}"
-    mkdir -p "$docker_config/cli-plugins"
-
-    curl -fsSL "https://github.com/docker/compose/releases/download/v${compose_version}/docker-compose-${os}-${arch}" \
-        -o "$docker_config/cli-plugins/docker-compose"
-
-    chmod +x "$docker_config/cli-plugins/docker-compose"
 
     if docker compose version > /dev/null 2>&1; then
         print_success "Docker Compose instalado"
         return 0
     fi
 
-    print_error "Falha ao instalar Docker Compose"
-    return 1
-}
+    # Instalar manualmente
+    print_substep "Instalando Docker Compose manualmente..."
 
-start_docker_service() {
-    print_step "Iniciando serviço Docker..."
+    local compose_version="2.30.3"
+    local os
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local arch
+    arch=$(uname -m)
 
-    if command -v systemctl &> /dev/null; then
-        $SUDO systemctl enable --now docker > /dev/null 2>&1 || true
-        print_success "Serviço Docker iniciado"
-    elif command -v service &> /dev/null; then
-        $SUDO service docker start > /dev/null 2>&1 || true
-        print_success "Serviço Docker iniciado"
+    case "$arch" in
+        x86_64|amd64) arch="x86_64" ;;
+        aarch64|arm64) arch="aarch64" ;;
+    esac
+
+    mkdir -p /usr/local/lib/docker/cli-plugins
+    curl -fsSL "https://github.com/docker/compose/releases/download/v${compose_version}/docker-compose-${os}-${arch}" \
+        -o /usr/local/lib/docker/cli-plugins/docker-compose
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+    if docker compose version > /dev/null 2>&1; then
+        print_success "Docker Compose instalado"
+    else
+        print_error "Falha ao instalar Docker Compose"
+        exit 1
     fi
 }
 
-# ===== SETUP DO TURION =====
-
-setup_turion_directory() {
-    print_step "Configurando diretório /opt/turion..."
-
-    if [ -d "$TURION_DIR" ]; then
-        print_warning "Diretório já existe, fazendo backup..."
-        $SUDO mv "$TURION_DIR" "${TURION_DIR}.backup.$(date +%s)"
-    fi
-
-    $SUDO mkdir -p "$TURION_DIR"
-    $SUDO chown "$USER":"$USER" "$TURION_DIR"
-
-    print_success "Diretório criado"
-}
+# ===== FASE 5: CLONAR REPOSITORIO =====
 
 clone_repository() {
-    print_step "Clonando repositório do GitHub..."
+    print_step "Preparando repositorio..."
 
-    cd /opt
+    if [ -d "$TURION_DIR" ]; then
+        if [ -d "$TURION_DIR/.git" ]; then
+            print_substep "Repositorio ja existe, atualizando..."
+            cd "$TURION_DIR"
+            git fetch --depth 1 origin main > /dev/null 2>&1
+            git reset --hard origin/main > /dev/null 2>&1
+            print_success "Repositorio atualizado"
+            return 0
+        else
+            print_substep "Diretorio existe mas nao e um repo git, removendo..."
+            rm -rf "$TURION_DIR"
+        fi
+    fi
 
-    if ! git clone --depth 1 "$TURION_REPO" turion > /dev/null 2>&1; then
-        print_error "Falha ao clonar repositório"
+    print_substep "Clonando repositorio..."
+    git clone --depth 1 "$TURION_REPO" "$TURION_DIR" > /dev/null 2>&1
+
+    if [ ! -d "$TURION_DIR/.git" ]; then
+        print_error "Falha ao clonar repositorio"
         exit 1
     fi
 
-    print_success "Repositório clonado"
+    print_success "Repositorio clonado em ${TURION_DIR}"
 }
 
-create_directories() {
-    print_step "Criando estrutura de diretórios..."
+# ===== FASE 6: CONFIGURAR DIRETORIOS E .ENV =====
+
+setup_directories() {
+    print_step "Criando diretorios persistentes..."
 
     cd "$TURION_DIR"
 
     mkdir -p state logs auth_info
 
-    $SUDO chown -R ${TURION_UID}:${TURION_GID} state logs auth_info
-    $SUDO chmod 755 state logs auth_info
+    chown -R ${TURION_UID}:${TURION_GID} state logs auth_info 2>/dev/null || true
+    chmod 755 state logs auth_info
 
-    print_substep "state/ (UID:${TURION_UID} GID:${TURION_GID})"
-    print_substep "logs/ (UID:${TURION_UID} GID:${TURION_GID})"
-    print_substep "auth_info/ (UID:${TURION_UID} GID:${TURION_GID})"
-
-    print_success "Diretórios criados"
+    print_substep "state/  - dados persistentes"
+    print_substep "logs/   - logs da aplicacao"
+    print_substep "auth_info/ - autenticacao WhatsApp"
+    print_success "Diretorios criados"
 }
 
-generate_env_file() {
-    print_step "Configurando variáveis de ambiente..."
+generate_env() {
+    print_step "Configurando variaveis de ambiente..."
 
     cd "$TURION_DIR"
 
     if [ -f ".env" ]; then
-        print_warning ".env já existe, preservando..."
+        print_warning ".env ja existe, preservando configuracao atual"
         return 0
     fi
 
-    local owner_password=$(shuf -i 10000000-99999999 -n 1 2>/dev/null || echo "12345678")
+    # Copiar do .env.example se existir, senao criar
+    if [ -f ".env.example" ]; then
+        cp .env.example .env
+        print_substep "Copiado de .env.example"
+    else
+        cat > .env << 'ENVEOF'
+# Turion V1.1.1 - Environment Variables
 
-    cat > .env << EOF
 # ============================================
-# Turion V1.1.1 - Variáveis de Ambiente
+# API KEYS
 # ============================================
-#
-# INSTALAÇÃO: Docker (Profissional)
-# Diretório: /opt/turion
-#
-# ============================================
-
-# ===== SENHA DO PROPRIETÁRIO =====
-TURION_OWNER_PASSWORD=${owner_password}
-
-# ===== API KEYS (Configure antes de usar!) =====
-ANTHROPIC_API_KEY=
 XAI_API_KEY=
+ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 
-# ===== FEATURE FLAGS BRAIN V2 =====
-TURION_USE_GATEWAY=true
-TURION_USE_ORCHESTRATOR=true
-TURION_USE_MEMORY=true
+# ============================================
+# FEATURE FLAGS (V1.1.1)
+# ============================================
+TURION_USE_GATEWAY=false
+TURION_USE_ORCHESTRATOR=false
+TURION_USE_MEMORY=false
 TURION_AUTO_APPROVE=false
 
-# ===== CONFIGURAÇÕES GERAIS =====
-TURION_XAI_MODEL=grok-4-1-fast-reasoning
+# ============================================
+# GATEWAY CONFIG
+# ============================================
 TURION_GATEWAY_DEDUPLICATION=true
 TURION_GATEWAY_TTL=300000
+
+# ============================================
+# CONFIG
+# ============================================
+TURION_XAI_MODEL=grok-4-1-fast-reasoning
 TURION_ALLOWLIST=
 TURION_TIMEZONE=America/Sao_Paulo
-
-# ===== SUPABASE (Opcional) =====
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-SUPABASE_DB_PASSWORD=
-EOF
+ENVEOF
+        print_substep "Arquivo .env criado"
+    fi
 
     chmod 600 .env
-
-    print_substep "Senha do proprietário: ${BOLD}${owner_password}${NC}"
-    print_warning "Configure ANTHROPIC_API_KEY no arquivo .env antes de iniciar!"
-    print_success "Arquivo .env criado"
+    print_success "Arquivo .env configurado"
+    print_warning "Edite /opt/turion/.env e adicione suas API Keys antes de usar!"
 }
 
-# ===== DOCKER =====
+# ===== FASE 7: BUILD E START DOS CONTAINERS =====
 
-start_docker_containers() {
-    print_step "Iniciando containers Docker..."
+start_containers() {
+    print_step "Construindo e iniciando containers Docker..."
 
     cd "$TURION_DIR"
 
+    # Parar containers antigos se existirem
     docker compose down > /dev/null 2>&1 || true
 
-    if docker compose up -d --build > /dev/null 2>&1; then
-        print_success "Containers iniciados"
-    else
-        if $SUDO docker compose up -d --build > /dev/null 2>&1; then
-            print_warning "Containers iniciados com sudo"
-        else
-            print_error "Falha ao iniciar containers"
-            return 1
+    # Build
+    print_substep "Construindo imagem (pode demorar alguns minutos)..."
+    if ! docker compose build 2>&1 | tail -5; then
+        print_error "Falha ao construir imagem Docker"
+        echo ""
+        echo -e "  ${YELLOW}Verifique os logs acima para mais detalhes${NC}"
+        exit 1
+    fi
+
+    # Start
+    print_substep "Iniciando container..."
+    if ! docker compose up -d 2>&1; then
+        print_error "Falha ao iniciar container"
+        exit 1
+    fi
+
+    print_success "Container iniciado"
+
+    # Aguardar container ficar healthy
+    print_substep "Aguardando container ficar pronto (ate 60s)..."
+    local attempts=0
+    while [ $attempts -lt 30 ]; do
+        local status
+        status=$(docker inspect --format='{{.State.Health.Status}}' turion 2>/dev/null || echo "starting")
+
+        if [ "$status" = "healthy" ]; then
+            print_success "Container saudavel e funcionando"
+            return 0
         fi
-    fi
 
-    sleep 5
-}
-
-validate_installation() {
-    print_step "Validando instalação..."
-
-    cd "$TURION_DIR"
-
-    if ! docker ps | grep -q turion; then
-        print_error "Container não está rodando"
-        docker compose logs --tail 20
-        return 1
-    fi
-
-    print_substep "Container rodando"
-
-    if [ ! -f ".env" ]; then
-        print_error ".env não existe"
-        return 1
-    fi
-
-    print_substep "Arquivo .env OK"
-
-    for dir in state logs auth_info; do
-        if [ ! -d "$dir" ]; then
-            print_error "Diretório $dir não existe"
-            return 1
+        # Verificar se o container crashou
+        local running
+        running=$(docker inspect --format='{{.State.Running}}' turion 2>/dev/null || echo "false")
+        if [ "$running" = "false" ]; then
+            print_error "Container parou inesperadamente"
+            echo ""
+            echo -e "  ${YELLOW}Logs do container:${NC}"
+            docker compose logs --tail 30 turion 2>/dev/null || true
+            exit 1
         fi
+
+        sleep 2
+        attempts=$((attempts + 1))
     done
 
-    print_substep "Diretórios OK"
-
-    print_success "Instalação validada"
+    # Se nao ficou healthy mas ainda esta rodando, tudo bem
+    local running
+    running=$(docker inspect --format='{{.State.Running}}' turion 2>/dev/null || echo "false")
+    if [ "$running" = "true" ]; then
+        print_success "Container rodando (health check ainda pendente)"
+    else
+        print_error "Container nao iniciou corretamente"
+        docker compose logs --tail 20 turion 2>/dev/null || true
+        exit 1
+    fi
 }
 
-# ===== QR CODE =====
+# ===== FASE 8: EXIBIR QR CODE =====
 
 show_qr_code() {
     print_box "CONECTAR WHATSAPP" "$CYAN"
 
-    echo -e "${WHITE}Aguardando QR Code ser gerado...${NC}"
-    echo -e "${DIM}Isso pode levar até 30 segundos${NC}"
+    echo -e "${WHITE}Os logs do container serao exibidos abaixo.${NC}"
+    echo -e "${WHITE}Escaneie o QR Code com seu WhatsApp quando aparecer.${NC}"
+    echo -e "${DIM}(WhatsApp > Menu > Aparelhos conectados > Conectar aparelho)${NC}"
+    echo ""
+    echo -e "${YELLOW}Pressione Ctrl+C para sair dos logs quando terminar.${NC}"
     echo ""
 
     cd "$TURION_DIR"
 
-    timeout 60 docker compose logs -f 2>/dev/null | grep --line-buffered "QR" | head -1 || true
-
-    echo ""
-    echo -e "${CYAN}Para ver o QR Code completo:${NC}"
-    echo -e "  ${BOLD}cd /opt/turion && docker compose logs -f turion${NC}"
+    # Mostrar logs em tempo real por 120 segundos (ou ate Ctrl+C)
+    timeout 120 docker compose logs -f turion 2>/dev/null || true
     echo ""
 }
 
-# ===== PÓS-INSTALAÇÃO =====
+# ===== FASE 9: CONCLUSAO =====
 
 show_completion() {
-    print_box "INSTALAÇÃO CONCLUÍDA!" "$GREEN"
+    print_box "INSTALACAO CONCLUIDA COM SUCESSO!" "$GREEN"
 
-    echo -e "${WHITE}Turion V1.1.1 instalado com sucesso!${NC}"
+    echo -e "${WHITE}Turion V1.1.1 instalado em: ${BOLD}/opt/turion${NC}"
     echo ""
-    echo -e "${BOLD}Próximos passos:${NC}"
+    echo -e "${BOLD}${CYAN}Proximos passos:${NC}"
     echo ""
-    echo -e "1. ${CYAN}Configure sua API Key:${NC}"
-    echo -e "   nano /opt/turion/.env"
-    echo -e "   ${DIM}(Adicione ANTHROPIC_API_KEY)${NC}"
+    echo -e "  ${WHITE}1.${NC} Configure suas API Keys:"
+    echo -e "     ${BOLD}nano /opt/turion/.env${NC}"
     echo ""
-    echo -e "2. ${CYAN}Reinicie o container:${NC}"
-    echo -e "   cd /opt/turion && docker compose restart"
+    echo -e "  ${WHITE}2.${NC} Reinicie o container:"
+    echo -e "     ${BOLD}cd /opt/turion && docker compose restart${NC}"
     echo ""
-    echo -e "3. ${CYAN}Ver logs e QR Code:${NC}"
-    echo -e "   docker compose logs -f turion"
+    echo -e "  ${WHITE}3.${NC} Veja os logs e escaneie o QR Code:"
+    echo -e "     ${BOLD}cd /opt/turion && docker compose logs -f turion${NC}"
     echo ""
-    echo -e "4. ${CYAN}Comandos úteis:${NC}"
-    echo -e "   docker compose ps          ${DIM}# Status${NC}"
-    echo -e "   docker compose logs -f     ${DIM}# Logs em tempo real${NC}"
-    echo -e "   docker compose restart     ${DIM}# Reiniciar${NC}"
-    echo -e "   docker compose down        ${DIM}# Parar${NC}"
+    echo -e "${BOLD}${CYAN}Comandos uteis:${NC}"
     echo ""
-    echo -e "${DIM}Instalado em: /opt/turion${NC}"
-    echo -e "${DIM}Documentação: https://github.com/LucasBolla94/turionai${NC}"
+    echo -e "  ${BOLD}cd /opt/turion${NC}"
+    echo -e "  ${BOLD}docker compose ps${NC}            ${DIM}# Ver status${NC}"
+    echo -e "  ${BOLD}docker compose logs -f turion${NC} ${DIM}# Ver logs em tempo real${NC}"
+    echo -e "  ${BOLD}docker compose restart${NC}        ${DIM}# Reiniciar${NC}"
+    echo -e "  ${BOLD}docker compose down${NC}           ${DIM}# Parar${NC}"
+    echo -e "  ${BOLD}docker compose up -d --build${NC}  ${DIM}# Reconstruir e iniciar${NC}"
+    echo ""
+    echo -e "${DIM}Documentacao: https://github.com/LucasBolla94/turionai${NC}"
     echo ""
 }
 
@@ -516,47 +512,40 @@ show_completion() {
 
 main() {
     print_header
+    print_box "INICIANDO INSTALACAO" "$CYAN"
 
-    print_box "INICIANDO INSTALAÇÃO" "$CYAN"
-
-    # FASE 1: Validações
-    check_root_or_sudo
+    # Fase 1: Validacoes
+    check_root
+    check_os
     check_disk_space
     check_connectivity
 
-    # FASE 2: Atualização do sistema
+    # Fase 2: Update do sistema
     update_system
 
-    # FASE 3: Dependências
+    # Fase 3: Dependencias
     install_dependencies
 
-    # FASE 4: Docker
+    # Fase 4: Docker
     install_docker
-    wait_for_docker
     install_docker_compose
-    start_docker_service
 
-    # FASE 5: Setup Turion
-    setup_turion_directory
+    # Fase 5: Clonar repositorio
     clone_repository
-    create_directories
-    generate_env_file
 
-    # FASE 6: Docker Containers
-    start_docker_containers
-    validate_installation
+    # Fase 6: Diretorios e .env
+    setup_directories
+    generate_env
 
-    # FASE 7: QR Code (se API Key configurada)
-    if grep -q "^ANTHROPIC_API_KEY=sk-ant-" /opt/turion/.env 2>/dev/null; then
-        show_qr_code
-    else
-        print_warning "Configure ANTHROPIC_API_KEY antes de conectar ao WhatsApp"
-    fi
+    # Fase 7: Build e start
+    start_containers
 
-    # FASE 8: Conclusão
+    # Fase 8: Conclusao
     show_completion
+
+    # Fase 9: Exibir QR Code (logs em tempo real)
+    show_qr_code
 }
 
-# Executar
-trap 'print_error "Instalação interrompida"; exit 1' INT TERM
+trap 'echo ""; print_error "Instalacao interrompida pelo usuario"; exit 1' INT TERM
 main
