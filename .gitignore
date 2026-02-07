@@ -3,3 +3,4 @@ logs/
 state/
 .env
 dist/
+.claude/settings.local.json
