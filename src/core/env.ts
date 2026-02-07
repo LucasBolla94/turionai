@@ -10,7 +10,13 @@ function stripQuotes(value: string): string {
 
 export function loadEnvFromFile(envPath = resolve(".env")): void {
   if (!existsSync(envPath)) return;
-  const raw = readFileSync(envPath, "utf8");
+  let raw: string;
+  try {
+    raw = readFileSync(envPath, "utf8");
+  } catch {
+    console.warn(`[env] Nao foi possivel ler ${envPath} (permissao?). Usando variaveis do ambiente.`);
+    return;
+  }
   const lines = raw.split(/\r?\n/);
   for (const line of lines) {
     const trimmed = line.trim();

@@ -3391,8 +3391,9 @@ async function handleOwnerSetup(
 
 async function saveEnvValue(key: string, value: string): Promise<void> {
   const envPath = resolve(".env");
+  const fs = await import("node:fs/promises");
   try {
-    const current = await (await import("node:fs/promises")).readFile(envPath, "utf8");
+    const current = await fs.readFile(envPath, "utf8");
     const lines = current.split(/\r?\n/);
     let found = false;
     const next = lines.map((line) => {
@@ -3405,10 +3406,16 @@ async function saveEnvValue(key: string, value: string): Promise<void> {
     if (!found) {
       next.push(`${key}=${value}`);
     }
-    await (await import("node:fs/promises")).writeFile(envPath, next.join("\n"), "utf8");
+    await fs.writeFile(envPath, next.join("\n"), "utf8");
   } catch {
-    await (await import("node:fs/promises")).writeFile(envPath, `${key}=${value}\n`, "utf8");
+    try {
+      await fs.writeFile(envPath, `${key}=${value}\n`, "utf8");
+    } catch {
+      console.warn(`[env] Nao foi possivel salvar ${key} em ${envPath}. Definido apenas em memoria.`);
+    }
   }
+  // Always set in process.env so the value is available even if file write failed
+  process.env[key] = value;
 }
 
 async function handleStandaloneApiKey(

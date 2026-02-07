@@ -39,6 +39,7 @@ FROM node:20-alpine
 RUN apk add --no-cache \
     tini \
     curl \
+    su-exec \
     && rm -rf /var/cache/apk/*
 
 # Criar usuário não-root
@@ -57,8 +58,9 @@ COPY --from=builder --chown=turion:turion /app/package*.json ./
 RUN mkdir -p logs state auth_info && \
     chown -R turion:turion /app
 
-# Trocar para usuário não-root
-USER turion
+# Copiar entrypoint script (roda como root para fixar permissões, depois desce para turion)
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expor porta (se necessário no futuro)
 EXPOSE 3000
@@ -67,8 +69,8 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD node -e "console.log('healthy')" || exit 1
 
-# Usar tini como init system (previne processos zumbis)
-ENTRYPOINT ["/sbin/tini", "--"]
+# Usar tini como init system + entrypoint para fixar permissões
+ENTRYPOINT ["/sbin/tini", "--", "docker-entrypoint.sh"]
 
-# Comando padrão
+# Comando padrão (executado como turion via su-exec no entrypoint)
 CMD ["node", "dist/index.js"]
