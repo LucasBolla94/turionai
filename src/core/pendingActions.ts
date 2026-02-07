@@ -37,7 +37,6 @@ export type PendingAction =
   | {
       type: "OWNER_SETUP";
       stage:
-        | "await_api_key"
         | "await_anthropic_key"
         | "ask_assistant_name"
         | "ask_user_name"

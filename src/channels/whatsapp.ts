@@ -195,18 +195,22 @@ function buildPostSetupIntro(
 ): string {
   if (language.startsWith("en")) {
     const lines = [
-      `All set, ${name}. I'm ${assistantName}.`,
-      "Here are a few simple ways to use me:",
+      `All set, ${name}! I'm configured and ready to help.`,
+      "",
+      "Here's what I can do for you:",
       buildPostSetupHelp(),
-      "Want me to set something up now?",
+      "",
+      "Want me to do something for you right now?",
     ];
     return lines.filter(Boolean).join("\n");
   }
   const lines = [
-    `Fechado, ${name}. Eu sou ${assistantName}.`,
-    "Aqui vao alguns jeitos simples de me usar:",
+    `Pronto, ${name}! To configurado e pronto pra te ajudar.`,
+    "",
+    "Aqui vai o que eu sei fazer:",
     buildPostSetupHelp(),
-    "Quer que eu ja configure algo pra voce agora?",
+    "",
+    "Quer que eu ja faca algo pra voce?",
   ];
   return lines.filter(Boolean).join("\n");
 }
@@ -270,6 +274,7 @@ function parseLocation(value: string): { city: string; country?: string } {
 }
 
 const ALLOWED_ENV_KEYS = new Set([
+  "ANTHROPIC_API_KEY",
   "XAI_API_KEY",
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -306,6 +311,9 @@ function validateEnvValue(key: string, value: string): string | null {
   if (!value.trim()) return "valor vazio";
   if (key === "SUPABASE_URL" && !/^https?:\/\//i.test(value)) {
     return "SUPABASE_URL invalida (use https://...)";
+  }
+  if (key === "ANTHROPIC_API_KEY" && !value.startsWith("sk-ant-")) {
+    return "ANTHROPIC_API_KEY invalida (deve comecar com sk-ant-)";
   }
   if (key === "XAI_API_KEY" && !value.startsWith("xai-")) {
     return "XAI_API_KEY invalida (deve comecar com xai-)";
@@ -436,17 +444,17 @@ function extractQuotedText(message: any): string | null {
 }
 
 function buildOnboardingSummary(owner: Awaited<ReturnType<typeof getOwnerState>>): string {
-  if (!owner) return "Fechou. Ainda preciso de alguns detalhes.";
+  if (!owner) return "Hmm, ainda preciso de alguns detalhes pra finalizar.";
   const assistant = owner.assistant_name ?? "Tur";
   const name = owner.owner_name ?? "voce";
   const city = owner.city ?? "sua cidade";
-  const country = owner.country ? `/${owner.country}` : "";
-  const language = owner.language ?? "pt-BR";
+  const country = owner.country ? `, ${owner.country}` : "";
   const timezone = owner.timezone ?? "UTC";
+  const language = owner.language ?? "pt-BR";
   if (language.startsWith("en")) {
-    return `Summary: I'm ${assistant}. You are ${name}, in ${city}${country}, language ${language}, timezone ${timezone}. Is that correct?`;
+    return `Let me make sure I got everything:\n\nI'm ${assistant}, your personal assistant.\nYou're ${name}, based in ${city}${country}, timezone ${timezone}.\n\nDoes that look right?`;
   }
-  return `Resumo: eu sou ${assistant}. Voce e ${name}, esta em ${city}${country}, fala ${language} e seu fuso e ${timezone}. Tudo certo?`;
+  return `Deixa eu ver se entendi tudo:\n\nEu sou o ${assistant}, seu assistente pessoal.\nVoce e o ${name}, mora em ${city}${country} e seu fuso e ${timezone}.\n\nTa tudo certo?`;
 }
 
 function detectUserLanguage(text: string): "pt-BR" | "en-US" | null {
@@ -757,7 +765,7 @@ export async function initWhatsApp(): Promise<WASocket> {
         }
         const awaitingApiKey =
           pending?.type === "OWNER_SETUP" &&
-          (pending.stage === "await_api_key" || pending.stage === "await_anthropic_key");
+          pending.stage === "await_anthropic_key";
         if (!awaitingApiKey) {
           const handledAnthropic = await handleStandaloneAnthropicKey(socket, from, threadId, text);
           if (handledAnthropic) {
@@ -832,7 +840,7 @@ export async function initWhatsApp(): Promise<WASocket> {
           await setOwner(sender);
           await setPending(threadId, {
             type: "OWNER_SETUP",
-            stage: "await_api_key",
+            stage: "await_anthropic_key",
             createdAt: new Date().toISOString(),
           });
           await sendAndLog(
@@ -840,8 +848,8 @@ export async function initWhatsApp(): Promise<WASocket> {
             from,
             threadId,
             isEnglish
-              ? "Great, paired successfully. Now send your Grok API key (XAI_API_KEY)."
-              : "Boa, pareamos com sucesso. Agora me envia a API do Grok (XAI_API_KEY).",
+              ? "Hey, nice to meet you! We just connected.\n\nTo get me up and running, I need your Anthropic API key — it starts with sk-ant-.\nCan you paste it here for me?"
+              : "Opa, prazer! Acabamos de nos conectar.\n\nPra eu funcionar, preciso da sua chave da Anthropic — ela comeca com sk-ant-.\nCola ela aqui pra mim?",
             { polish: false },
           );
           continue;
@@ -853,8 +861,8 @@ export async function initWhatsApp(): Promise<WASocket> {
           from,
           threadId,
           isEnglish
-            ? "To start, send the pairing code shown in the terminal before the QR. If you don't have it, contact http://turion.network."
-            : "Para iniciar, me envia o codigo de pareamento que apareceu no terminal antes do QR. Se nao tiver, fale com http://turion.network.",
+            ? "Hi there! To get started, I need the pairing code shown in the terminal. Can you check there for me?"
+            : "Oi! Pra gente comecar, preciso que voce me envie o codigo de pareamento que apareceu no terminal. Da uma olhada la?",
           { polish: false },
         );
         continue;
@@ -2693,7 +2701,6 @@ async function handlePendingDecision(
     | {
         type: "OWNER_SETUP";
         stage:
-          | "await_api_key"
           | "await_anthropic_key"
           | "ask_assistant_name"
           | "ask_user_name"
@@ -3159,7 +3166,6 @@ async function handleOwnerSetup(
   pending: {
     type: "OWNER_SETUP";
     stage:
-      | "await_api_key"
       | "await_anthropic_key"
       | "ask_assistant_name"
       | "ask_user_name"
@@ -3177,57 +3183,18 @@ async function handleOwnerSetup(
   const isEnglish = language.startsWith("en");
   const assistantFallback = owner?.assistant_name ?? "Tur";
 
-  if (pending.stage === "await_api_key") {
-    if (!value.startsWith("xai-")) {
-      await sendSetup(
-        isEnglish
-          ? "That key doesn't look valid. Send the XAI_API_KEY starting with xai-."
-          : "Essa chave nao parece valida. Envie a XAI_API_KEY comecando com xai-.",
-      );
-      return true;
-    }
-    await saveEnvValue("XAI_API_KEY", value);
-    process.env.XAI_API_KEY = value;
-    await addMemoryItem("decision", "Grok configurado como modelo principal");
-    await setPending(threadId, {
-      type: "OWNER_SETUP",
-      stage: "await_anthropic_key",
-      createdAt: new Date().toISOString(),
-    });
-    await sendSetup(
-      isEnglish
-        ? "If you have an Anthropic (Sonnet) API key, send it now. If not, reply 'skip'."
-        : "Se tiver a chave da Anthropic (Sonnet), me envie agora. Se nao tiver, responda 'pular'.",
-    );
-    return true;
-  }
-
   if (pending.stage === "await_anthropic_key") {
-    const lower = value.toLowerCase();
-    if (lower === "pular" || lower === "skip" || lower === "nao" || lower === "não") {
-      await setPending(threadId, {
-        type: "OWNER_SETUP",
-        stage: "ask_assistant_name",
-        createdAt: new Date().toISOString(),
-      });
-      await sendSetup(
-        isEnglish
-          ? "Great. I'm an AI created by Turion Network. What name should I go by?"
-          : "Perfeito. Sou uma IA criada pela Turion Network. Como voce quer que eu me chame?",
-      );
-      return true;
-    }
     if (!isLikelyAnthropicKey(value)) {
       await sendSetup(
         isEnglish
-          ? "That doesn't look like an Anthropic key. Send it starting with sk-ant- or reply 'skip'."
-          : "Essa chave nao parece da Anthropic. Envie a chave começando com sk-ant- ou responda 'pular'.",
+          ? "Hmm, that key doesn't look right. Anthropic keys start with sk-ant- — can you try again?"
+          : "Hmm, essa chave nao parece certa. As chaves da Anthropic comecam com sk-ant- — tenta de novo?",
       );
       return true;
     }
     await saveEnvValue("ANTHROPIC_API_KEY", value);
     process.env.ANTHROPIC_API_KEY = value;
-    await addMemoryItem("decision", "Anthropic configurada (Sonnet)");
+    await addMemoryItem("decision", "Anthropic configurada como modelo principal");
     await setPending(threadId, {
       type: "OWNER_SETUP",
       stage: "ask_assistant_name",
@@ -3235,8 +3202,8 @@ async function handleOwnerSetup(
     });
     await sendSetup(
       isEnglish
-        ? "Great. I'm an AI created by Turion Network. What name should I go by?"
-        : "Perfeito. Sou uma IA criada pela Turion Network. Como voce quer que eu me chame?",
+        ? "Got it, key saved! Now tell me — what would you like to call me?"
+        : "Perfeito, guardei sua chave! Agora me conta — como voce quer que eu me chame?",
     );
     return true;
   }
@@ -3252,7 +3219,7 @@ async function handleOwnerSetup(
       createdAt: new Date().toISOString(),
     });
     await sendSetup(
-      isEnglish ? "And you—what should I call you?" : "E voce? Como prefere que eu te chame?",
+      isEnglish ? "Nice! And what should I call you?" : "Legal! E voce, como quer que eu te chame?",
     );
     return true;
   }
@@ -3269,8 +3236,8 @@ async function handleOwnerSetup(
     });
     await sendSetup(
       isEnglish
-        ? "To set your time correctly, what city do you live in?"
-        : "Pra eu ajustar seus horarios direitinho, em que cidade voce mora?",
+        ? "And where are you from? Tell me your city and I'll sort out the timezone."
+        : "E de onde voce e? Me fala sua cidade que eu ja ajusto o fuso horario.",
     );
     return true;
   }
@@ -3301,8 +3268,8 @@ async function handleOwnerSetup(
       });
       await sendSetup(
         isEnglish
-          ? "What's your timezone? (example: Europe/London)"
-          : "Qual e seu fuso horario? (ex: Europe/London)",
+          ? "I couldn't figure out the timezone from your city. What's your timezone? (e.g. America/Sao_Paulo)"
+          : "Nao consegui detectar o fuso pela sua cidade. Qual e seu fuso horario? (ex: America/Sao_Paulo)",
       );
       return true;
     }
@@ -3330,8 +3297,8 @@ async function handleOwnerSetup(
     } catch {
       await sendSetup(
         isEnglish
-          ? "I couldn't identify your timezone. Example: Europe/London or America/Sao_Paulo."
-          : "Nao consegui identificar seu horario. Ex: Europe/London ou America/Sao_Paulo.",
+          ? "Hmm, I couldn't figure out that timezone. Can you try something like Europe/London or America/Sao_Paulo?"
+          : "Hmm, nao consegui identificar esse fuso. Tenta algo como America/Sao_Paulo ou Europe/London?",
       );
       return true;
     }
@@ -3352,9 +3319,9 @@ async function handleOwnerSetup(
       const name = freshOwner?.owner_name ?? "por aqui";
       const assistantName = freshOwner?.assistant_name ?? assistantFallback;
       const message = [
-        isEnglish ? "Sure, quick intro:" : "Boa, te explico rapidinho.",
+        isEnglish ? "Sure, here's a quick intro:" : "Claro, olha o que eu sei fazer:",
         buildPostSetupHelp(),
-        isEnglish ? "Want me to set something up now?" : "Se quiser, posso configurar algo agora.",
+        isEnglish ? "Want me to do something for you now?" : "Quer que eu ja faca algo pra voce?",
       ].join("\n");
       await sendSetup(message);
       return true;
@@ -3391,14 +3358,14 @@ async function handleOwnerSetup(
       });
       await sendSetup(
         isEnglish
-          ? "Okay. Tell me what you want to adjust first."
-          : "Beleza. Me diz o que voce quer ajustar primeiro.",
+          ? "Sure thing. Tell me what you'd like to change."
+          : "Sem problema. Me diz o que voce quer mudar.",
       );
     } else {
       await sendSetup(
         isEnglish
-          ? "If you want to adjust something, say: my name, your name, city, or timezone."
-          : "Se quiser ajustar algo, me diz: meu nome, seu nome, cidade ou fuso horario.",
+          ? "If something's off, just tell me what — my name, your name, city, or timezone."
+          : "Se algo nao ta certo, me fala o que — meu nome, seu nome, cidade ou fuso horario.",
       );
     }
     return true;
@@ -3437,14 +3404,21 @@ async function handleStandaloneApiKey(
 ): Promise<boolean> {
   const value = text.trim();
   const sendSetup = (msg: string) => sendAndLog(socket, to, threadId, msg, { polish: false });
-  if (!isLikelyXaiKey(value)) {
-    return false;
+  if (isLikelyAnthropicKey(value)) {
+    await saveEnvValue("ANTHROPIC_API_KEY", value);
+    process.env.ANTHROPIC_API_KEY = value;
+    await addMemoryItem("decision", "ANTHROPIC_API_KEY atualizada via WhatsApp");
+    await sendSetup("Chave da Anthropic salva! Posso continuar?");
+    return true;
   }
-  await saveEnvValue("XAI_API_KEY", value);
-  process.env.XAI_API_KEY = value;
-  await addMemoryItem("decision", "XAI_API_KEY atualizada via WhatsApp");
-  await sendSetup("Chave do Grok salva. Posso continuar?");
-  return true;
+  if (isLikelyXaiKey(value)) {
+    await saveEnvValue("XAI_API_KEY", value);
+    process.env.XAI_API_KEY = value;
+    await addMemoryItem("decision", "XAI_API_KEY atualizada via WhatsApp");
+    await sendSetup("Chave do Grok salva! Posso continuar?");
+    return true;
+  }
+  return false;
 }
 
 async function handleStandaloneAnthropicKey(
