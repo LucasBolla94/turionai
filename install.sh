@@ -393,7 +393,8 @@ ENVEOF
         print_substep "Arquivo .env criado"
     fi
 
-    chmod 600 .env
+    chown ${TURION_UID}:${TURION_GID} .env
+    chmod 660 .env
     print_success "Arquivo .env configurado"
     print_warning "A API Key sera configurada pelo WhatsApp durante o setup inicial!"
 }

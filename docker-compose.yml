@@ -20,6 +20,10 @@ services:
       - ./auth_info:/app/auth_info
       - ./.env:/app/.env
 
+    # Variáveis de ambiente (fallback para inicialização)
+    env_file:
+      - .env
+
     # Porta exposta (se necessário no futuro)
     ports:
       - "3000:3000"

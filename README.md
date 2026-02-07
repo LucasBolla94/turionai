@@ -13,7 +13,6 @@
 - 🎯 **Feature Flags** - Sistema de ativação/desativação de funcionalidades
 - 🔄 **Auto-restart** - Recuperação automática de erros
 - 🐳 **Docker Ready** - Deploy isolado e seguro
-- ⚡ **PM2 Support** - Alternativa leve para VPS
 - 🔒 **Auditoria completa** - Logs e histórico em JSONL
 
 ---
