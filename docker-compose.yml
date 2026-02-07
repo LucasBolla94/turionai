@@ -18,10 +18,7 @@ services:
       - ./state:/app/state
       - ./logs:/app/logs
       - ./auth_info:/app/auth_info
-
-    # Variáveis de ambiente
-    env_file:
-      - .env
+      - ./.env:/app/.env
 
     # Porta exposta (se necessário no futuro)
     ports:

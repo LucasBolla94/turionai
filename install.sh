@@ -356,10 +356,10 @@ generate_env() {
 # Turion V1.1.1 - Environment Variables
 
 # ============================================
-# API KEYS
+# API KEYS (Configure via WhatsApp ou aqui)
 # ============================================
-XAI_API_KEY=
 ANTHROPIC_API_KEY=
+XAI_API_KEY=
 OPENAI_API_KEY=
 
 # ============================================
@@ -382,13 +382,20 @@ TURION_GATEWAY_TTL=300000
 TURION_XAI_MODEL=grok-4-1-fast-reasoning
 TURION_ALLOWLIST=
 TURION_TIMEZONE=America/Sao_Paulo
+
+# ============================================
+# SUPABASE (Opcional)
+# ============================================
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_DB_PASSWORD=
 ENVEOF
         print_substep "Arquivo .env criado"
     fi
 
     chmod 600 .env
     print_success "Arquivo .env configurado"
-    print_warning "Edite /opt/turion/.env e adicione suas API Keys antes de usar!"
+    print_warning "A API Key sera configurada pelo WhatsApp durante o setup inicial!"
 }
 
 # ===== FASE 7: BUILD E START DOS CONTAINERS =====
