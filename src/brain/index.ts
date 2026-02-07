@@ -10,10 +10,11 @@ export type {
   IntentClassification,
   ProcessRequest,
   ProcessResult,
-  AgentExecuteParams,
-  AgentExecuteResult,
 } from "./types";
-export type { AgentExecuteParams as BaseAgentExecuteParams } from "./agents/baseAgent";
+export type {
+  AgentExecuteParams,
+  AgentExecuteResult
+} from "./agents/baseAgent";
 
 // Memory System (STEP-03)
 export { MemorySystem, ShortTermMemory, SessionMemory, LongTermMemory } from "./memory";
