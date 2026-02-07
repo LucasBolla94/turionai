@@ -409,6 +409,12 @@ start_containers() {
     # Parar containers antigos se existirem
     docker compose down > /dev/null 2>&1 || true
 
+    # Limpar estado anterior para setup limpo
+    print_substep "Limpando estado anterior..."
+    rm -rf auth_info/creds.json auth_info/app-state-sync-* auth_info/session-* 2>/dev/null || true
+    rm -f state/persona/owner.json state/memory/owner.json state/owner.json 2>/dev/null || true
+    rm -f state/pending.json 2>/dev/null || true
+
     # Build
     print_substep "Construindo imagem (pode demorar alguns minutos)..."
     if ! docker compose build 2>&1 | tail -5; then
@@ -471,48 +477,79 @@ start_containers() {
 show_qr_code() {
     print_box "CONECTAR WHATSAPP" "$CYAN"
 
-    echo -e "${WHITE}Os logs do container serao exibidos abaixo.${NC}"
-    echo -e "${WHITE}Escaneie o QR Code com seu WhatsApp quando aparecer.${NC}"
-    echo -e "${DIM}(WhatsApp > Menu > Aparelhos conectados > Conectar aparelho)${NC}"
-    echo ""
-    echo -e "${YELLOW}Pressione Ctrl+C para sair dos logs quando terminar.${NC}"
+    echo -e "${WHITE}Aguardando QR Code e conexao do WhatsApp...${NC}"
+    echo -e "${DIM}(WhatsApp > Menu > Aparelhos conectados > Conectar)${NC}"
     echo ""
 
     cd "$TURION_DIR"
 
-    # Mostrar logs em tempo real por 120 segundos (ou ate Ctrl+C)
-    timeout 120 docker compose logs -f turion 2>/dev/null || true
+    # Mostrar logs ate WhatsApp conectar (ou timeout de 180s)
+    local LOG_PIPE="/tmp/turion_logs_$$"
+    mkfifo "$LOG_PIPE" 2>/dev/null || true
+
+    # Iniciar leitura de logs em background
+    docker compose logs -f turion 2>/dev/null > "$LOG_PIPE" &
+    local LOGS_PID=$!
+
+    # Ler logs linha a linha, sair quando conectar
+    local CONNECTED=0
+    local TIMEOUT=180
+    local START_TIME=$(date +%s)
+
+    while IFS= read -r line || false; do
+        echo "$line"
+
+        # Detectar conexao bem sucedida
+        if echo "$line" | grep -q "ENVIE NO WHATSAPP A SENHA"; then
+            CONNECTED=1
+        fi
+
+        # Apos mostrar a senha, esperar mais 2 segundos e sair
+        if [ "$CONNECTED" = "1" ]; then
+            sleep 2
+            break
+        fi
+
+        # Timeout
+        local NOW=$(date +%s)
+        if [ $((NOW - START_TIME)) -ge $TIMEOUT ]; then
+            echo ""
+            print_warning "Timeout aguardando conexao. Use: cd /opt/turion && docker compose logs -f turion"
+            break
+        fi
+    done < "$LOG_PIPE"
+
+    # Limpar
+    kill $LOGS_PID 2>/dev/null || true
+    rm -f "$LOG_PIPE" 2>/dev/null || true
+
+    echo ""
+    echo -e "${GREEN}${BOLD}  ================================================${NC}"
+    echo -e "${GREEN}${BOLD}  Turion esta rodando em background!${NC}"
+    echo -e "${GREEN}${BOLD}  ================================================${NC}"
+    echo ""
+    echo -e "  ${WHITE}Agora envie a senha de 4 digitos no WhatsApp${NC}"
+    echo -e "  ${WHITE}para iniciar o setup do seu assistente.${NC}"
+    echo ""
+    echo -e "  ${DIM}Para ver logs:  cd /opt/turion && docker compose logs -f turion${NC}"
+    echo -e "  ${DIM}Para reiniciar: cd /opt/turion && docker compose restart${NC}"
     echo ""
 }
 
 # ===== FASE 9: CONCLUSAO =====
 
 show_completion() {
-    print_box "INSTALACAO CONCLUIDA COM SUCESSO!" "$GREEN"
+    print_box "INSTALACAO CONCLUIDA!" "$GREEN"
 
     echo -e "${WHITE}Turion V1.1.1 instalado em: ${BOLD}/opt/turion${NC}"
-    echo ""
-    echo -e "${BOLD}${CYAN}Proximos passos:${NC}"
-    echo ""
-    echo -e "  ${WHITE}1.${NC} Configure suas API Keys:"
-    echo -e "     ${BOLD}nano /opt/turion/.env${NC}"
-    echo ""
-    echo -e "  ${WHITE}2.${NC} Reinicie o container:"
-    echo -e "     ${BOLD}cd /opt/turion && docker compose restart${NC}"
-    echo ""
-    echo -e "  ${WHITE}3.${NC} Veja os logs e escaneie o QR Code:"
-    echo -e "     ${BOLD}cd /opt/turion && docker compose logs -f turion${NC}"
     echo ""
     echo -e "${BOLD}${CYAN}Comandos uteis:${NC}"
     echo ""
     echo -e "  ${BOLD}cd /opt/turion${NC}"
-    echo -e "  ${BOLD}docker compose ps${NC}            ${DIM}# Ver status${NC}"
-    echo -e "  ${BOLD}docker compose logs -f turion${NC} ${DIM}# Ver logs em tempo real${NC}"
+    echo -e "  ${BOLD}docker compose logs -f turion${NC} ${DIM}# Ver logs${NC}"
     echo -e "  ${BOLD}docker compose restart${NC}        ${DIM}# Reiniciar${NC}"
     echo -e "  ${BOLD}docker compose down${NC}           ${DIM}# Parar${NC}"
-    echo -e "  ${BOLD}docker compose up -d --build${NC}  ${DIM}# Reconstruir e iniciar${NC}"
-    echo ""
-    echo -e "${DIM}Documentacao: https://github.com/LucasBolla94/turionai${NC}"
+    echo -e "  ${BOLD}docker compose up -d --build${NC}  ${DIM}# Reconstruir${NC}"
     echo ""
 }
 
@@ -548,11 +585,11 @@ main() {
     # Fase 7: Build e start
     start_containers
 
-    # Fase 8: Conclusao
-    show_completion
-
-    # Fase 9: Exibir QR Code (logs em tempo real)
+    # Fase 8: Exibir QR Code e aguardar conexao
     show_qr_code
+
+    # Fase 9: Conclusao
+    show_completion
 }
 
 trap 'echo ""; print_error "Instalacao interrompida pelo usuario"; exit 1' INT TERM
