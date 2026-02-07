@@ -745,7 +745,8 @@ export async function initWhatsApp(): Promise<WASocket> {
       try {
         let pending = await getPending(threadId);
         const sanitizedText = sanitizeConversationText(text, pending);
-        if (parseApiStatusRequest(text)) {
+        const isInSetup = pending?.type === "OWNER_SETUP";
+        if (!isInSetup && parseApiStatusRequest(text)) {
           const response = await buildApiStatusResponse();
           await sendAndLog(socket, from, threadId, response);
           continue;
@@ -890,8 +891,8 @@ export async function initWhatsApp(): Promise<WASocket> {
           from,
           threadId,
           isEnglish
-            ? "Hey! To confirm you're the owner, send me the *4-digit PIN* shown in the terminal right after the QR code."
-            : "Oi! Pra confirmar que voce e o dono, me envia a *senha de 4 digitos* que apareceu no terminal logo depois do QR code.",
+            ? "Hey! To get started, send me the *4-digit PIN* shown in the terminal after the QR code.\n\nNeed help? Visit https://www.turion.network"
+            : "Oi! Pra comecar, me envia a *senha de 4 digitos* que apareceu no terminal depois do QR code.\n\nPrecisa de ajuda? Acesse https://www.turion.network",
           { polish: false },
         );
         continue;
