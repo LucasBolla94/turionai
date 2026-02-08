@@ -11,59 +11,131 @@ import pino from "pino";
 import { resolve } from "node:path";
 import { statfsSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { isAuthorized } from "../config/allowlist";
-import { classifyMessage } from "../core/messagePipeline";
-import { listScripts, runScript } from "../executor/executor";
-import { createCron, createCronNormalized, listCrons, pauseCron, removeCron } from "../core/cronManager";
+import { isAuthorized } from "../../config/allowlist";
+import { classifyMessage } from "../../core/messagePipeline";
+import { listScripts, runScript } from "../../executor/executor";
+import { createCron, createCronNormalized, listCrons, pauseCron, removeCron } from "../../core/cronManager";
 import os from "node:os";
 import {
-  checkAiHealth,
   diagnoseLogs,
   explainEmailSecurity,
   interpretOnboardingAnswer,
   interpretStrictJson,
-} from "../core/brain";
-import { executeActions } from "../core/actionExecutor";
-import { getProject, upsertProject } from "../core/projectRegistry";
-import { findSkillByIntent } from "../skills/registry";
-import { runPlan } from "../core/planRunner";
+} from "../../core/brain";
+import { executeActions } from "../../core/actionExecutor";
+import { getProject, upsertProject } from "../../core/projectRegistry";
+import { findSkillByIntent } from "../../skills/registry";
+import { runPlan } from "../../core/planRunner";
 import {
   appendConversation,
   appendDigest,
   readRecentConversation,
-} from "../core/conversationStore";
-import { summarizeConversation } from "../core/brain";
+} from "../../core/conversationStore";
+import { summarizeConversation } from "../../core/brain";
 import {
   addMemoryItem,
   buildMemoryContext,
   searchMemoryByKeywords,
-} from "../core/memoryStore";
+} from "../../core/memoryStore";
 import {
   getCurrentTimeString,
   inferTimezoneFromLocation,
   normalizeTimezoneInput,
   setTimezone,
-} from "../core/timezone";
-import { registerCronHandler } from "../core/cronManager";
-import { readLatestDigest } from "../core/conversationStore";
-import { getTimezone } from "../core/timezone";
-import { EmailSkill } from "../skills/emailSkill";
-import { processBrainMessage } from "../brain/migrationWrapper";
-import { clearPending, getPending, setPending } from "../core/pendingActions";
-import { loadEmailConfig } from "../core/emailStore";
-import { listEmails } from "../core/emailClient";
-import { consumeUpdatePending, hasUpdatePending, markUpdatePending } from "../core/updateStatus";
-import { addEmailRule, extractEmailDomain } from "../core/emailRules";
-import { loadEmailSnapshot } from "../core/emailSnapshot";
-import { applyFeedback, setBehaviorProfile, touchEmotionState } from "../core/behavior";
-import { polishReply, syncStyleFromBehavior } from "../core/ux/HumanReply";
-import { recordInteraction, getInteractionState, markCheckinSent, setLastTopic } from "../core/interaction";
-import { updatePreferencesFromMessage } from "../core/preferences";
-import { updateRouterFromMessage } from "../core/responseRouter";
-import { ensurePairingCode, getOwnerState, setOwner, updateOwnerDetails } from "../core/owner";
-import { CAPABILITIES, HELP_SECTIONS } from "../config/capabilities";
-import { runSilentStudy } from "../core/studyEngine";
-import { checkSupabaseHealth } from "../core/supabaseClient";
+} from "../../core/timezone";
+import { registerCronHandler } from "../../core/cronManager";
+import { readLatestDigest } from "../../core/conversationStore";
+import { getTimezone } from "../../core/timezone";
+import { EmailSkill } from "../../skills/emailSkill";
+import { processBrainMessage } from "../../brain/migrationWrapper";
+import { clearPending, getPending, setPending } from "../../core/pendingActions";
+import { loadEmailConfig } from "../../core/emailStore";
+
+import { consumeUpdatePending, hasUpdatePending, markUpdatePending } from "../../core/updateStatus";
+import { addEmailRule, extractEmailDomain } from "../../core/emailRules";
+import { loadEmailSnapshot } from "../../core/emailSnapshot";
+import { applyFeedback, setBehaviorProfile, touchEmotionState } from "../../core/behavior";
+import { polishReply, syncStyleFromBehavior } from "../../core/ux/HumanReply";
+import { recordInteraction, getInteractionState, markCheckinSent, setLastTopic } from "../../core/interaction";
+import { updatePreferencesFromMessage } from "../../core/preferences";
+import { updateRouterFromMessage } from "../../core/responseRouter";
+import { ensurePairingCode, getOwnerState, setOwner, updateOwnerDetails } from "../../core/owner";
+import { runSilentStudy } from "../../core/studyEngine";
+
+
+import {
+  normalizeJid,
+  isLikelyXaiKey,
+  extractAnthropicKey,
+  isLikelyAnthropicKey,
+  userMentionsEmail,
+  isRecentTimestamp,
+  stripEmailContent,
+  sameOwner,
+  extractQuotedText,
+  safeJson,
+  sanitizeConversationText,
+  extractEmail,
+  enforceResponseStructure,
+  truncateLogs,
+  extractCleanupSuggestion,
+  buildPromoListMessage,
+  buildEmailDeletePrompt,
+  buildEmailPickPrompt,
+  resolveEmailDeleteTargets,
+  normalizeEmailArgs,
+} from "./utils";
+
+import {
+  parseRelativeReminder,
+  parseLocation,
+  parseConfirmation,
+  parseUpdateRequest,
+  parseUpdateStatusRequest,
+  parseModelUpdateQuestion,
+  buildModelUpdateExplanation,
+  parseApiStatusRequest,
+  parseUpdateCheckRequest,
+  parseGitStatusRequest,
+  parseEmailStatusRequest,
+  parseEmailAccessQuestion,
+  parseEmailConnectRequest,
+  parseEmailSecurityQuestion,
+  parseEmailProvider,
+  parseEmailPromoRequest,
+  parseRetryRequest,
+  isEmailListFollowup,
+  parseTimeRequest,
+  parseTimezoneRequest,
+  parsePickIndex,
+  parseUpdatedFiles,
+  parseEmailCommandArgs,
+  isPostSetupHelpRequest,
+  detectHelpTopic,
+  buildPostSetupIntro,
+  buildPostSetupHelp,
+  buildHelpMessage,
+  buildOnboardingSummary,
+  detectUserLanguage,
+  buildEmailConnectIntro,
+  buildIcloudStepsIntro,
+  randomUpdateBackMessage,
+  pickUpdateFoundMessage,
+  resolveUpdateCheck,
+} from "./parsing";
+
+import {
+  extractEnvUpdates,
+  isEnvUpdateRequest,
+  applyEnvUpdates,
+  saveEnvValue,
+} from "./envManager";
+
+import {
+  readLocalLogSnippet,
+  buildApiStatusResponse,
+  checkEmailHealth,
+} from "./health";
 
 const authDir = resolve("state", "baileys");
 const seenMessages = new Map<string, number>();
@@ -78,295 +150,6 @@ let isInitializing = false;
 let activeSocket: WASocket | null = null;
 let qrTimer: ReturnType<typeof setTimeout> | null = null;
 let lastQrResetAt = 0;
-
-function normalizeJid(value: string | null | undefined): string {
-  if (!value) return "";
-  return value.replace(/\\D/g, "");
-}
-
-function isLikelyXaiKey(value: string): boolean {
-  return /^xai-[A-Za-z0-9]{20,}$/.test(value.trim());
-}
-
-function extractAnthropicKey(text: string): string | null {
-  const match = text.match(/sk-ant-[A-Za-z0-9-_]{10,}/);
-  return match ? match[0] : null;
-}
-
-function isLikelyAnthropicKey(value: string): boolean {
-  return /^sk-ant-[A-Za-z0-9-_]{10,}$/.test(value.trim());
-}
-
-function userMentionsEmail(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  return (
-    normalized.includes("email") ||
-    normalized.includes("e-mail") ||
-    normalized.includes("inbox") ||
-    normalized.includes("caixa") ||
-    normalized.includes("não lido") ||
-    normalized.includes("nao lido") ||
-    normalized.includes("newsletter") ||
-    normalized.includes("promo")
-  );
-}
-
-function isRecentTimestamp(value?: string, minutes = 30): boolean {
-  if (!value) return false;
-  const ts = new Date(value).getTime();
-  if (!Number.isFinite(ts)) return false;
-  const deltaMs = Date.now() - ts;
-  return deltaMs >= 0 && deltaMs <= minutes * 60_000;
-}
-
-function stripEmailContent(reply: string): string {
-  const lines = reply.split(/\r?\n/);
-  const filtered = lines.filter((line) => {
-    const normalized = line.toLowerCase();
-    if (
-      normalized.includes("email") ||
-      normalized.includes("e-mail") ||
-      normalized.includes("inbox") ||
-      normalized.includes("não lido") ||
-      normalized.includes("nao lido") ||
-      normalized.includes("newsletter") ||
-      normalized.includes("promo")
-    ) {
-      return false;
-    }
-    return true;
-  });
-  const cleaned = filtered.join("\n").trim();
-  return cleaned;
-}
-
-function parseRelativeReminder(text: string): { message: string; offsetMs: number } | null {
-  const normalized = text.toLowerCase();
-  if (!normalized.includes("lembre") && !normalized.includes("lembra")) {
-    return null;
-  }
-  const match = normalized.match(/(?:daqui a? |em )(\d+)\s*(minuto|minutos|min|hora|horas|h)/i);
-  if (!match) return null;
-  const amount = Number(match[1]);
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-  const unit = match[2];
-  const minutes = unit.startsWith("h") ? amount * 60 : amount;
-  const offsetMs = minutes * 60_000;
-  if (offsetMs <= 0) return null;
-
-  let message = text;
-  message = message.replace(match[0], "");
-  message = message.replace(/me\s+lembre(?:\s+de)?/i, "");
-  message = message.replace(/me\s+lembra(?:\s+de)?/i, "");
-  message = message.replace(/lembre(?:\s+de)?/i, "");
-  message = message.replace(/lembra(?:\s+de)?/i, "");
-  message = message.replace(/\s+/g, " ").trim();
-  if (!message) message = "Lembrete";
-  return { message, offsetMs };
-}
-
-function sameOwner(a: string | null | undefined, b: string | null | undefined): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  const aNum = normalizeJid(a);
-  const bNum = normalizeJid(b);
-  return aNum.length > 6 && aNum === bNum;
-}
-
-function isPostSetupHelpRequest(text: string): boolean {
-  const normalized = text.toLowerCase();
-  return (
-    normalized.includes("primeiros comandos") ||
-    normalized.includes("o que voce faz") ||
-    normalized.includes("o que vc faz") ||
-    normalized.includes("como usar") ||
-    normalized.includes("me mostra") ||
-    normalized.includes("me mostra os comandos") ||
-    normalized.includes("ajuda") ||
-    normalized.includes("help")
-  );
-}
-
-function buildPostSetupIntro(
-  name: string,
-  assistantName: string,
-  language: string,
-): string {
-  if (language.startsWith("en")) {
-    const lines = [
-      `All set, ${name}! I'm configured and ready to help.`,
-      "",
-      "Here's what I can do for you:",
-      buildPostSetupHelp(),
-      "",
-      "Want me to do something for you right now?",
-    ];
-    return lines.filter(Boolean).join("\n");
-  }
-  const lines = [
-    `Pronto, ${name}! To configurado e pronto pra te ajudar.`,
-    "",
-    "Aqui vai o que eu sei fazer:",
-    buildPostSetupHelp(),
-    "",
-    "Quer que eu ja faca algo pra voce?",
-  ];
-  return lines.filter(Boolean).join("\n");
-}
-
-function buildPostSetupHelp(): string {
-  const buckets = CAPABILITIES.map((category) => {
-    const examples = category.items.slice(0, 2).map((item) => `- ${item}`);
-    return [`${category.title}:`, ...examples].join("\n");
-  });
-  return buckets.join("\n");
-}
-
-function buildHelpMessage(topic: string): string {
-  const normalized = topic.toLowerCase();
-  const section =
-    HELP_SECTIONS.find((item) => normalized.includes(item.key)) ??
-    HELP_SECTIONS.find((item) => item.key === "geral");
-  if (!section) return "Posso explicar o que eu faço. Quer ajuda com email, lembretes ou update?";
-  const lines = [
-    section.title,
-    section.description,
-    "",
-    ...section.steps.map((step) => `- ${step}`),
-    "",
-    "Exemplos:",
-    ...section.examples.map((example) => `- ${example}`),
-  ];
-  return lines.filter(Boolean).join("\n");
-}
-
-function detectHelpTopic(text: string): string {
-  const normalized = text.toLowerCase();
-  if (normalized.includes("icloud")) return "icloud";
-  if (normalized.includes("gmail")) return "email";
-  if (normalized.includes("email") || normalized.includes("e-mail")) return "email";
-  if (normalized.includes("lembrete") || normalized.includes("cron")) return "lembretes";
-  if (normalized.includes("update") || normalized.includes("atualiza")) return "update";
-  if (normalized.includes("ajuda") || normalized.includes("help")) return "geral";
-  if (normalized.includes("configura")) return "geral";
-  return "geral";
-}
-
-function parseLocation(value: string): { city: string; country?: string } {
-  const cleaned = value.trim().replace(/\s+/g, " ");
-  if (cleaned.includes(" em ")) {
-    const parts = cleaned.split(" em ");
-    const city = parts[parts.length - 1]?.trim();
-    if (city) {
-      return { city };
-    }
-  }
-  if (cleaned.includes(",")) {
-    const [city, country] = cleaned.split(",").map((part) => part.trim());
-    return { city, country: country || undefined };
-  }
-  const tokens = cleaned.split(" ");
-  if (tokens.length >= 2) {
-    return { city: tokens.slice(0, -1).join(" "), country: tokens[tokens.length - 1] };
-  }
-  return { city: cleaned };
-}
-
-const ALLOWED_ENV_KEYS = new Set([
-  "ANTHROPIC_API_KEY",
-  "XAI_API_KEY",
-  "SUPABASE_URL",
-  "SUPABASE_SERVICE_ROLE_KEY",
-  "SUPABASE_DB_PASSWORD",
-  "TURION_XAI_MODEL",
-]);
-
-function extractEnvUpdates(text: string): Record<string, string> {
-  const updates: Record<string, string> = {};
-  const lines = text.split(/\r?\n/);
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line || !line.includes("=")) continue;
-    const [key, ...rest] = line.split("=");
-    const envKey = key.trim();
-    if (!ALLOWED_ENV_KEYS.has(envKey)) continue;
-    const value = rest.join("=").trim();
-    if (!value) continue;
-    updates[envKey] = value;
-  }
-  return updates;
-}
-
-function isEnvUpdateRequest(text: string): boolean {
-  const normalized = text.toLowerCase();
-  if (!normalized.includes("=")) return false;
-  if (/(adicione|adicionar|adiciona|coloca|coloque|preencha|seta|setar|add)/.test(normalized)) {
-    return true;
-  }
-  return Object.keys(extractEnvUpdates(text)).length > 0;
-}
-
-function validateEnvValue(key: string, value: string): string | null {
-  if (!value.trim()) return "valor vazio";
-  if (key === "SUPABASE_URL" && !/^https?:\/\//i.test(value)) {
-    return "SUPABASE_URL invalida (use https://...)";
-  }
-  if (key === "ANTHROPIC_API_KEY" && !value.startsWith("sk-ant-")) {
-    return "ANTHROPIC_API_KEY invalida (deve comecar com sk-ant-)";
-  }
-  if (key === "XAI_API_KEY" && !value.startsWith("xai-")) {
-    return "XAI_API_KEY invalida (deve comecar com xai-)";
-  }
-  return null;
-}
-
-async function applyEnvUpdates(
-  updates: Record<string, string>,
-): Promise<{ applied: string[]; errors: string[] }> {
-  const applied: string[] = [];
-  const errors: string[] = [];
-  for (const [key, value] of Object.entries(updates)) {
-    const error = validateEnvValue(key, value);
-    if (error) {
-      errors.push(`${key}: ${error}`);
-      continue;
-    }
-    await saveEnvValue(key, value);
-    process.env[key] = value;
-    applied.push(key);
-  }
-  return { applied, errors };
-}
-
-async function readLocalLogSnippet(): Promise<string> {
-  const { readFile } = await import("node:fs/promises");
-  const candidates = [resolve("logs", "error.log"), resolve("logs", "app.log"), resolve("logs", "turion.log")];
-  for (const path of candidates) {
-    try {
-      const data = await readFile(path, "utf8");
-      if (data.trim()) {
-        return data.slice(-4000);
-      }
-    } catch {
-      // ignore
-    }
-  }
-  return "";
-}
-
-function buildPromoListMessage(
-  items: Array<{ id: number; sender: string; subject: string }>,
-): string {
-  const lines = items.slice(0, 10).map((item) => `#${item.id} ${item.sender} — ${item.subject}`);
-  return [
-    "Esses parecem newsletters/promos:",
-    "",
-    ...lines,
-    "",
-    "Quer apagar algum? Me diga os IDs (ex: 123, 456) ou diga 'apagar todos'.",
-  ].join("\n");
-}
 
 async function attemptAutoFix(
   socket: WASocket,
@@ -445,68 +228,6 @@ async function attemptAutoFix(
   await sendAndLog(socket, to, threadId, "Pronto. Apliquei os passos seguros. Quer que eu rode um status?");
   return true;
 }
-function extractQuotedText(message: any): string | null {
-  const quoted =
-    message?.message?.extendedTextMessage?.contextInfo?.quotedMessage ??
-    message?.message?.contextInfo?.quotedMessage;
-  if (!quoted) return null;
-  return (
-    quoted.conversation ??
-    quoted.extendedTextMessage?.text ??
-    quoted.imageMessage?.caption ??
-    null
-  );
-}
-
-function buildOnboardingSummary(owner: Awaited<ReturnType<typeof getOwnerState>>): string {
-  if (!owner) return "Hmm, ainda preciso de alguns detalhes pra finalizar.";
-  const assistant = owner.assistant_name ?? "Tur";
-  const name = owner.owner_name ?? "voce";
-  const city = owner.city ?? "sua cidade";
-  const country = owner.country ? `, ${owner.country}` : "";
-  const timezone = owner.timezone ?? "UTC";
-  const language = owner.language ?? "pt-BR";
-  if (language.startsWith("en")) {
-    return `Let me make sure I got everything:\n\nI'm ${assistant}, your personal assistant.\nYou're ${name}, based in ${city}${country}, timezone ${timezone}.\n\nDoes that look right?`;
-  }
-  return `Deixa eu ver se entendi tudo:\n\nEu sou o ${assistant}, seu assistente pessoal.\nVoce e o ${name}, mora em ${city}${country} e seu fuso e ${timezone}.\n\nTa tudo certo?`;
-}
-
-function detectUserLanguage(text: string): "pt-BR" | "en-US" | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  if (/^\d{4,6}$/.test(trimmed)) return null;
-  if (trimmed.startsWith("xai-")) return null;
-  const normalized = trimmed.toLowerCase();
-  if (/[ãáàâéêíóôõúç]/.test(normalized)) return "pt-BR";
-  const ptHits = [
-    "oi",
-    "ola",
-    "olá",
-    "por favor",
-    "obrigado",
-    "lembrete",
-    "me lembra",
-    "agora",
-    "amanha",
-    "voce",
-    "você",
-  ].filter((token) => normalized.includes(token)).length;
-  const enHits = [
-    "hi",
-    "hello",
-    "please",
-    "thanks",
-    "reminder",
-    "now",
-    "tomorrow",
-    "you",
-  ].filter((token) => normalized.includes(token)).length;
-  if (enHits > ptHits) return "en-US";
-  if (ptHits > 0) return "pt-BR";
-  return null;
-}
-
 async function ensureOwnerLanguage(
   owner: Awaited<ReturnType<typeof getOwnerState>>,
   text: string,
@@ -1536,21 +1257,6 @@ async function handleCommand(
   await sendAndLog(socket, to, threadId, "Comando não reconhecido.");
 }
 
-function truncateLogs(input: string): string {
-  const maxChars = 20_000;
-  const lines = input.split(/\r?\n/);
-  const deduped: string[] = [];
-  let last = "";
-  for (const line of lines) {
-    if (line === last) continue;
-    deduped.push(line);
-    last = line;
-  }
-  const joined = deduped.join("\n");
-  if (joined.length <= maxChars) return joined;
-  return `${joined.slice(0, maxChars)}\n...[truncado]`;
-}
-
 async function handleBrain(
   socket: WASocket,
   to: string,
@@ -2205,353 +1911,6 @@ async function maybeDigest(threadId: string): Promise<void> {
   await appendDigest(threadId, summary);
 }
 
-function safeJson<T = Record<string, unknown>>(payload: string): T | null {
-  try {
-    return JSON.parse(payload) as T;
-  } catch {
-    return null;
-  }
-}
-
-function sanitizeConversationText(
-  text: string,
-  pending: { type: string; stage?: string } | null,
-): string {
-  const lowered = text.toLowerCase();
-  const sensitiveHints = ["app password", "senha", "password", "email connect"];
-  if (isLikelyXaiKey(text.trim())) {
-    return "[redacted]";
-  }
-  if (pending?.type === "EMAIL_CONNECT_FLOW" && pending.stage === "await_password") {
-    return "[redacted]";
-  }
-  if (sensitiveHints.some((hint) => lowered.includes(hint))) {
-    return "[redacted]";
-  }
-  return text;
-}
-
-function parseUpdateRequest(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  const hasUpdate =
-    normalized.includes("atualiz") ||
-    normalized.includes("update") ||
-    normalized.includes("faz o update") ||
-    normalized.includes("fazer update") ||
-    normalized.includes("forca o update") ||
-    normalized.includes("forçar o update") ||
-    normalized.includes("mesmo assim");
-  const hasTarget =
-    normalized.includes("turion") ||
-    normalized.includes("sistema") ||
-    normalized.includes("bot") ||
-    normalized.includes("agente") ||
-    normalized.includes("modelo");
-  const hasVerb =
-    normalized.includes("faz") ||
-    normalized.includes("fazer") ||
-    normalized.includes("forca") ||
-    normalized.includes("forçar");
-  return hasUpdate && (hasTarget || hasVerb || normalized.length < 20);
-}
-
-function parseUpdateStatusRequest(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  const hasUpdate = normalized.includes("update") || normalized.includes("atualiza");
-  const hasQuestion =
-    normalized.includes("tem") ||
-    normalized.includes("novo") ||
-    normalized.includes("?") ||
-    normalized.includes("existe");
-  return hasUpdate && hasQuestion;
-}
-
-function parseModelUpdateQuestion(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  const hasModel =
-    normalized.includes("modelo") ||
-    normalized.includes("grok") ||
-    normalized.includes("ia") ||
-    normalized.includes("llm");
-  const hasUpdate = normalized.includes("update") || normalized.includes("atualiza");
-  return hasModel && hasUpdate;
-}
-
-function buildModelUpdateExplanation(): string {
-  const model = process.env.TURION_XAI_MODEL || "grok-4-1-fast-reasoning";
-  return [
-    "O modelo (Grok) é um serviço externo: eu não faço update dele localmente.",
-    "Modelo configurado agora: " + model + ".",
-    "Se quiser trocar, me diga o modelo exato e eu ajusto a configuracao.",
-  ].join("\n");
-}
-
-function parseApiStatusRequest(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  const hasApi = normalized.includes("api") || normalized.includes("xai") || normalized.includes("grok");
-  const hasCheck =
-    normalized.includes("conect") ||
-    normalized.includes("ok") ||
-    normalized.includes("funcion") ||
-    normalized.includes("respond") ||
-    normalized.includes("status");
-  return hasApi && hasCheck;
-}
-
-async function buildApiStatusResponse(): Promise<string> {
-  const ai = await checkAiHealth();
-  const supabase = await checkSupabaseHealth();
-  const email = await checkEmailHealth();
-  const lines = ["Status das APIs:"];
-  if (ai.ok) {
-    lines.push("- Anthropic: OK");
-  } else if (ai.message.includes("ANTHROPIC_API_KEY")) {
-    lines.push("- Anthropic: chave nao configurada");
-  } else {
-    lines.push(`- Anthropic: erro (${ai.message})`);
-  }
-  if (supabase.ok) {
-    lines.push("- Supabase: OK");
-  } else {
-    lines.push(`- Supabase: erro (${supabase.message})`);
-  }
-  if (!email.configured) {
-    lines.push("- Email: nao configurado");
-  } else if (email.ok) {
-    lines.push("- Email: OK");
-  } else {
-    lines.push(`- Email: erro (${email.message})`);
-  }
-  lines.push("- WhatsApp: online");
-
-  const fixes: string[] = [];
-  if (!ai.ok && ai.message.includes("ANTHROPIC_API_KEY")) {
-    fixes.push("Envie sua ANTHROPIC_API_KEY para eu validar na hora.");
-  }
-  if (!supabase.ok && supabase.message.includes("nao configurado")) {
-    fixes.push("Preencha SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env.");
-  }
-  if (!email.configured) {
-    fixes.push("Se quiser email, diga: conectar email.");
-  }
-  if (fixes.length) {
-    lines.push("");
-    lines.push("Como corrigir:");
-    lines.push(...fixes.map((item) => `- ${item}`));
-  }
-  return lines.join("\n");
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("timeout")), ms);
-    promise
-      .then((value) => {
-        clearTimeout(timer);
-        resolve(value);
-      })
-      .catch((error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-  });
-}
-
-async function checkEmailHealth(): Promise<{ ok: boolean; message: string; configured: boolean }> {
-  const config = await loadEmailConfig();
-  if (!config) {
-    return { ok: false, message: "nao configurado", configured: false };
-  }
-  try {
-    await withTimeout(listEmails(config, { limit: 1, unreadOnly: true }), 8000);
-    return { ok: true, message: "ok", configured: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "falha desconhecida";
-    return { ok: false, message, configured: true };
-  }
-}
-function resolveUpdateCheck(status: string): { kind: "available" | "up_to_date" | "error" | "unknown"; message?: string } {
-  if (status.includes("UPDATE_AVAILABLE")) return { kind: "available" };
-  if (status.includes("UP_TO_DATE")) return { kind: "up_to_date" };
-  if (status.includes("GIT_NOT_FOUND")) {
-    return { kind: "error", message: "Git nao esta instalado no ambiente. Nao consigo checar update agora." };
-  }
-  if (status.includes("NOT_A_GIT_REPO")) {
-    return { kind: "error", message: "Nao encontrei um repositorio git configurado aqui." };
-  }
-  if (status.includes("NO_REMOTE")) {
-    return { kind: "error", message: "Repositorio sem remote origin configurado. Nao consigo checar update." };
-  }
-  if (status.includes("FETCH_FAILED")) {
-    return { kind: "error", message: "Falha ao buscar updates no remoto. Tente novamente mais tarde." };
-  }
-  if (status.includes("NO_REMOTE_MAIN")) {
-    return { kind: "error", message: "Nao encontrei origin/main no remoto." };
-  }
-  return { kind: "unknown" };
-}
-
-function parseUpdateCheckRequest(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  return (
-    normalized.includes("checa de novo") ||
-    normalized.includes("checar de novo") ||
-    normalized.includes("verifica de novo")
-  );
-}
-
-function parseGitStatusRequest(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  const hasGit = normalized.includes("git") || normalized.includes("github");
-  const hasConnect =
-    normalized.includes("conectado") ||
-    normalized.includes("conectada") ||
-    normalized.includes("conexao") ||
-    normalized.includes("conexão") ||
-    normalized.includes("conectar");
-  return hasGit && hasConnect;
-}
-
-function parseEmailStatusRequest(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  return (
-    (normalized.includes("email") || normalized.includes("e-mail")) &&
-    (normalized.includes("conect") || normalized.includes("ligado") || normalized.includes("pronto"))
-  );
-}
-
-function parseEmailAccessQuestion(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  const hasEmail = normalized.includes("email") || normalized.includes("e-mail");
-  const hasAccess =
-    normalized.includes("acesso") ||
-    normalized.includes("tem acesso") ||
-    /\bler\b/.test(normalized) ||
-    /\blê\b/.test(normalized) ||
-    /\blesse\b/.test(normalized);
-  return hasEmail && hasAccess;
-}
-
-function parseEmailConnectRequest(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  const hasEmail = normalized.includes("email") || normalized.includes("e-mail");
-  const hasConnect =
-    normalized.includes("conectar") ||
-    normalized.includes("configurar") ||
-    normalized.includes("ligar") ||
-    normalized.includes("vincular");
-  return hasEmail && hasConnect;
-}
-
-function parseEmailSecurityQuestion(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  const hasEmail = normalized.includes("email") || normalized.includes("e-mail");
-  const hasProvider = normalized.includes("gmail") || normalized.includes("icloud");
-  const hasSecurity =
-    normalized.includes("segur") ||
-    normalized.includes("senha") ||
-    normalized.includes("app password") ||
-    normalized.includes("app-specific") ||
-    normalized.includes("como funciona") ||
-    normalized.includes("por que") ||
-    normalized.includes("porque");
-  return hasSecurity && (hasEmail || hasProvider);
-}
-
-function buildEmailConnectIntro(): string {
-  return [
-    "Ainda nao tenho acesso ao seu email.",
-    "Se voce quiser, posso conectar de forma segura.",
-    "Opcoes: Gmail ou iCloud.",
-    "Se preferir, eu explico com calma como funciona e por que usamos App Password.",
-    "Qual voce quer usar?",
-  ].join("\n");
-}
-
-function buildIcloudStepsIntro(): string {
-  return [
-    "Perfeito. No iCloud, a Apple exige uma App-Specific Password (mais segura que a senha principal).",
-    "Se quiser, eu explico o motivo e o passo a passo com calma.",
-    "Passo rapido:",
-    "1) appleid.apple.com > Sign-In and Security > App-Specific Passwords",
-    "2) Generate Password (nome: Turion Assistant Mail)",
-    "3) Copie a senha gerada (aparece uma vez)",
-    "",
-    "Agora me envie seu email @icloud.com.",
-  ].join("\n");
-}
-
-function parseEmailProvider(text: string): "icloud" | "gmail" | null {
-  const normalized = text.trim().toLowerCase();
-  if (normalized === "icloud" || normalized.includes("icloud")) return "icloud";
-  if (normalized === "gmail" || normalized.includes("gmail")) return "gmail";
-  return null;
-}
-
-function parseEmailPromoRequest(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  const hasPromo =
-    normalized.includes("promo") ||
-    normalized.includes("newsletter") ||
-    normalized.includes("newsletters") ||
-    normalized.includes("boletim") ||
-    normalized.includes("marketing");
-  const hasAsk =
-    normalized.includes("quais") ||
-    normalized.includes("mostra") ||
-    normalized.includes("ver") ||
-    normalized.includes("lista") ||
-    normalized.includes("listar");
-  return hasPromo && (hasAsk || normalized.length < 20);
-}
-
-function parseRetryRequest(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  return (
-    normalized.includes("de novo") ||
-    normalized.includes("novamente") ||
-    normalized.includes("procura") ||
-    normalized.includes("procure") ||
-    normalized.includes("checa de novo") ||
-    normalized.includes("checar de novo")
-  );
-}
-
-function isEmailListFollowup(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  const hasEmail =
-    normalized.includes("email") ||
-    normalized.includes("e-mail") ||
-    normalized.includes("inbox") ||
-    normalized.includes("caixa");
-  const hasMore =
-    normalized.includes("mais") ||
-    normalized.includes("outros") ||
-    normalized.includes("mostrar") ||
-    normalized.includes("mostra") ||
-    normalized.includes("listar") ||
-    normalized.includes("lista");
-  return hasMore && (hasEmail || normalized.includes("mais"));
-}
-
-function extractEmail(text: string): string | null {
-  const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-  return match ? match[0] : null;
-}
-
 async function handlePendingEmailConnect(
   socket: WASocket,
   to: string,
@@ -2641,81 +2000,6 @@ async function handlePendingEmailConnect(
 }
 
 
-
-function parseEmailCommandArgs(action: string, rest: string[]): Record<string, unknown> {
-  if (action === "connect") {
-    return {
-      action: "connect",
-      provider: rest[0],
-      user: rest[1],
-      password: rest.slice(2).join(" "),
-    };
-  }
-  if (action === "list") {
-    const limit = rest[0] ? Number(rest[0]) : 5;
-    const mode = rest.includes("compact") || rest.includes("ver") ? "compact" : "summary";
-    return { action: "list", limit, unreadOnly: true, mode };
-  }
-  if (action === "read") {
-    return { action: "read", id: Number(rest[0]) };
-  }
-  if (action === "reply") {
-    return { action: "reply", id: Number(rest[0]), body: rest.slice(1).join(" ") };
-  }
-  if (action === "explain") {
-    return { action: "explain", id: Number(rest[0]) };
-  }
-  if (action === "draft") {
-    return { action: "draft_reply", id: Number(rest[0]), instruction: rest.slice(1).join(" ") };
-  }
-  if (action === "delete") {
-    return { action: "delete", id: Number(rest[0]) };
-  }
-  if (action === "monitor") {
-    return { action: "monitor" };
-  }
-  return { action };
-}
-
-function extractCleanupSuggestion(
-  output: string,
-): { text: string; items: Array<{ id: number; sender: string }> } | null {
-  const marker = output.match(/\[\[CLEANUP:([^\]]+)\]\]/);
-  if (!marker) return null;
-  const items: Array<{ id: number; sender: string }> = [];
-  const payload = marker[1];
-  for (const part of payload.split(";")) {
-    const [idRaw, senderRaw] = part.split("|");
-    const id = Number(idRaw);
-    if (!id || !senderRaw) continue;
-    items.push({ id, sender: senderRaw.trim() });
-  }
-  const text = output.replace(marker[0], "").trim();
-  return items.length ? { text, items } : null;
-}
-
-function parseConfirmation(text: string): "confirm" | "cancel" | null {
-  const normalized = text.trim().toLowerCase();
-  const confirm = new Set([
-    "confirmar",
-    "sim",
-    "ok",
-    "confirmo",
-    "isso",
-    "isso mesmo",
-    "isso ai",
-    "isso aí",
-    "acertou",
-    "certo",
-    "exato",
-    "correto",
-    "pode",
-  ]);
-  const cancel = new Set(["cancelar", "nao", "não", "cancela", "errado"]);
-  if (confirm.has(normalized)) return "confirm";
-  if (cancel.has(normalized)) return "cancel";
-  return null;
-}
 
 async function handlePendingDecision(
   socket: WASocket,
@@ -2910,15 +2194,6 @@ async function handlePendingEmailDeletePick(
   return false;
 }
 
-function parsePickIndex(text: string, max: number): number | null {
-  const match = text.match(/\b(\d+)\b/);
-  if (!match) return null;
-  const index = Number(match[1]);
-  if (!Number.isFinite(index)) return null;
-  if (index < 1 || index > max) return null;
-  return index - 1;
-}
-
 async function deleteResolvedEmails(
   socket: WASocket,
   to: string,
@@ -3007,186 +2282,6 @@ async function maybeHandleEmailDeleteRequest(
   }
   await deleteResolvedEmails(socket, to, threadId, resolved.items);
   return true;
-}
-
-function resolveEmailDeleteTargets(
-  text: string,
-  items: Array<{ id: number; sender: string; subject: string; category?: string }>,
-): { items: Array<{ id: number; sender: string; subject: string }>; needsPick: boolean } | null {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return null;
-  const deleteVerb = /(apaga|apague|deleta|delete|remova|remover|exclui|excluir|apagar|deletar)/;
-  if (!deleteVerb.test(normalized)) return null;
-  const hasEmailWord =
-    normalized.includes("email") || normalized.includes("e-mail") || normalized.includes("inbox") || normalized.includes("caixa");
-  const mentionPromo =
-    normalized.includes("promo") ||
-    normalized.includes("newsletter") ||
-    normalized.includes("notifica") ||
-    normalized.includes("marketing");
-  const mentionAll = normalized.includes("todos") || normalized.includes("todas");
-  const countTwo =
-    normalized.includes("os dois") ||
-    normalized.includes("as duas") ||
-    normalized.includes("dois") ||
-    normalized.includes("duas") ||
-    normalized.includes(" 2 ");
-
-  const ids = Array.from(normalized.matchAll(/#?\b(\d{3,})\b/g)).map((m) =>
-    Number(m[1]),
-  );
-  if (ids.length > 0) {
-    const matches = items.filter((item) => ids.includes(item.id));
-    return { items: matches, needsPick: false };
-  }
-
-  const senderHint = extractSenderHint(normalized);
-  if (senderHint) {
-    const matches = items.filter((item) =>
-      `${item.sender} ${item.subject}`.toLowerCase().includes(senderHint),
-    );
-    if (matches.length > 0) {
-      return { items: matches, needsPick: matches.length > 1 && !mentionAll };
-    }
-  }
-
-  let base = items;
-  if (mentionPromo) {
-    base = items.filter((item) =>
-      ["promo", "newsletter", "spam"].includes(item.category ?? ""),
-    );
-  }
-
-  const keywordMatches = matchItemsByKeyword(normalized, base);
-  const candidates = keywordMatches.length > 0 ? keywordMatches : base;
-  if (candidates.length === 0) return { items: [], needsPick: false };
-
-  if (countTwo) {
-    return { items: candidates.slice(0, 2), needsPick: false };
-  }
-
-  if (mentionAll || mentionPromo) {
-    return { items: candidates, needsPick: false };
-  }
-
-  if (!hasEmailWord && keywordMatches.length === 0) return null;
-
-  if (keywordMatches.length > 1) {
-    return { items: keywordMatches, needsPick: true };
-  }
-
-  return { items: candidates.slice(0, 1), needsPick: false };
-}
-
-function matchItemsByKeyword(
-  text: string,
-  items: Array<{ id: number; sender: string; subject: string }>,
-): Array<{ id: number; sender: string; subject: string }> {
-  const stopwords = new Set([
-    "apaga",
-    "apague",
-    "deleta",
-    "delete",
-    "remova",
-    "remover",
-    "exclui",
-    "excluir",
-    "apagar",
-    "deletar",
-    "email",
-    "e-mail",
-    "emails",
-    "o",
-    "a",
-    "os",
-    "as",
-    "do",
-    "da",
-    "de",
-    "dos",
-    "das",
-    "pra",
-    "para",
-    "por",
-    "porfavor",
-    "favor",
-    "tambem",
-    "esse",
-    "essa",
-    "esses",
-    "essas",
-    "sim",
-  ]);
-  const tokens = text
-    .replace(/[^\w\s@.-]/g, " ")
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 2 && !stopwords.has(token));
-  if (tokens.length === 0) return [];
-  let maxScore = 0;
-  const scored = items.map((item) => {
-    const target = `${item.sender} ${item.subject}`.toLowerCase();
-    let score = 0;
-    for (const token of tokens) {
-      if (target.includes(token)) score += 1;
-    }
-    if (score > maxScore) maxScore = score;
-    return { item, score };
-  });
-  if (maxScore === 0) return [];
-  return scored.filter((entry) => entry.score === maxScore).map((entry) => entry.item);
-}
-
-function extractSenderHint(text: string): string | null {
-  const normalized = text.toLowerCase();
-  const match = normalized.match(/\b(do|da|de|from)\s+([a-z0-9@._-]{3,})/);
-  if (!match) return null;
-  return match[2];
-}
-
-function buildEmailDeletePrompt(items: Array<{ id: number; sender: string; subject: string }>): string {
-  const lines = items.map(
-    (item) => `#${item.id} ${item.sender} - ${shortEmailSubject(item.subject)}`,
-  );
-  const header =
-    items.length === 1
-      ? "So confirmando: posso apagar este email?"
-      : "So confirmando: posso apagar estes emails?";
-  return [header, "", ...lines, "", "Me responde com 'sim' ou 'nao'."]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function buildEmailPickPrompt(items: Array<{ id: number; sender: string; subject: string }>): string {
-  const lines = items.map(
-    (item, index) => `${index + 1}ï¸âƒ£ ${item.sender} â€” ${shortEmailSubject(item.subject)}`,
-  );
-  return [
-    "Encontrei mais de um email com esse nome.",
-    "Qual deles devo apagar? Responde com 1, 2, 3...",
-    "",
-    ...lines,
-  ].join("\n");
-}
-
-function shortEmailSubject(value: string): string {
-  if (value.length <= 50) return value;
-  return `${value.slice(0, 47)}...`;
-}
-
-function enforceResponseStructure(reply: string): string {
-  const cleaned = reply.trim();
-  if (!cleaned) return reply;
-  const lines = cleaned.split(/\r?\n/).filter(Boolean);
-  const ackPattern = /^(ok|certo|entendi|beleza|claro|perfeito|feito|tranquilo|vamos|bom|pronto)/i;
-  if (!ackPattern.test(lines[0])) {
-    lines.unshift("Entendi.");
-  }
-  const hasQuestion = lines.some((line) => line.trim().endsWith("?"));
-  if (!hasQuestion) {
-    // Avoid auto-appending a generic question.
-  }
-  return lines.join("\n");
 }
 
 async function handleOwnerSetup(
@@ -3404,35 +2499,6 @@ async function handleOwnerSetup(
   return false;
 }
 
-async function saveEnvValue(key: string, value: string): Promise<void> {
-  const envPath = resolve(".env");
-  const fs = await import("node:fs/promises");
-  try {
-    const current = await fs.readFile(envPath, "utf8");
-    const lines = current.split(/\r?\n/);
-    let found = false;
-    const next = lines.map((line) => {
-      if (line.startsWith(`${key}=`)) {
-        found = true;
-        return `${key}=${value}`;
-      }
-      return line;
-    });
-    if (!found) {
-      next.push(`${key}=${value}`);
-    }
-    await fs.writeFile(envPath, next.join("\n"), "utf8");
-  } catch {
-    try {
-      await fs.writeFile(envPath, `${key}=${value}\n`, "utf8");
-    } catch {
-      console.warn(`[env] Nao foi possivel salvar ${key} em ${envPath}. Definido apenas em memoria.`);
-    }
-  }
-  // Always set in process.env so the value is available even if file write failed
-  process.env[key] = value;
-}
-
 async function handleStandaloneApiKey(
   socket: WASocket,
   to: string,
@@ -3475,106 +2541,6 @@ async function handleStandaloneAnthropicKey(
   await sendSetup("Chave da Anthropic salva. Posso continuar?");
   return true;
 }
-function normalizeEmailArgs(
-  intent: string,
-  args: Record<string, unknown>,
-): Record<string, string | number | boolean | null> {
-  const actionMap: Record<string, string> = {
-    EMAIL_CONNECT: "connect",
-    EMAIL_LIST: "list",
-    EMAIL_READ: "read",
-    EMAIL_REPLY: "reply",
-    EMAIL_DELETE: "delete",
-    EMAIL_EXPLAIN: "explain",
-    EMAIL_DRAFT: "draft_reply",
-  };
-  return {
-    action: actionMap[intent] ?? (args.action as string | null),
-    ...args,
-  } as Record<string, string | number | boolean | null>;
-}
-
-function parseTimeRequest(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  return (
-    normalized.includes("que horas") ||
-    normalized.includes("horas são") ||
-    normalized.includes("hora são") ||
-    normalized.includes("hora agora") ||
-    normalized === "hora" ||
-    normalized === "horas"
-  );
-}
-
-function parseTimezoneRequest(
-  text: string,
-): { timeZone: string; label: string } | null {
-  const normalized = text.toLowerCase();
-  if (!/(fuso|hor[aá]rio|timezone)/.test(normalized)) {
-    return null;
-  }
-
-  const match = normalized.match(/(?:hor[aá]rio|fuso|timezone)\s+(?:de\s+)?(.+)$/);
-  const raw = match?.[1]?.trim();
-
-  const city = raw || normalized;
-  const mapping: Record<string, { timeZone: string; label: string }> = {
-    londres: { timeZone: "Europe/London", label: "Londres (Europe/London)" },
-    london: { timeZone: "Europe/London", label: "Londres (Europe/London)" },
-    lisboa: { timeZone: "Europe/Lisbon", label: "Lisboa (Europe/Lisbon)" },
-    lisbon: { timeZone: "Europe/Lisbon", label: "Lisboa (Europe/Lisbon)" },
-    "sao paulo": { timeZone: "America/Sao_Paulo", label: "São Paulo (America/Sao_Paulo)" },
-    "são paulo": { timeZone: "America/Sao_Paulo", label: "São Paulo (America/Sao_Paulo)" },
-    brasilia: { timeZone: "America/Sao_Paulo", label: "Brasília (America/Sao_Paulo)" },
-    "rio de janeiro": { timeZone: "America/Sao_Paulo", label: "Rio de Janeiro (America/Sao_Paulo)" },
-    portugal: { timeZone: "Europe/Lisbon", label: "Portugal (Europe/Lisbon)" },
-    uk: { timeZone: "Europe/London", label: "Reino Unido (Europe/London)" },
-    "reino unido": { timeZone: "Europe/London", label: "Reino Unido (Europe/London)" },
-  };
-
-  for (const [key, value] of Object.entries(mapping)) {
-    if (city.includes(key)) {
-      return value;
-    }
-  }
-
-  if (raw && raw.includes("/")) {
-    return { timeZone: raw.trim(), label: raw.trim() };
-  }
-
-  return null;
-}
-
-function parseUpdatedFiles(output: string): string {
-  const match = output.match(/(\d+)\s+files?\s+changed/i);
-  if (match) return `Atualizando ${match[1]} arquivos...`;
-  return "Atualizando arquivos...";
-}
-
-function randomUpdateBackMessage(): string {
-  const messages = [
-    "Opa, to de volta. Bora?",
-    "Prontinho, voltei online.",
-    "Voltei 0km haha. Em que seguimos?",
-    "Tudo certo aqui, ja estou de volta.",
-    "Ja voltei. Quer que eu faca mais algo?",
-  ];
-  return messages[Math.floor(Math.random() * messages.length)];
-}
-
-function pickUpdateFoundMessage(): string {
-  const messages = [
-    "Achei um update pro meu sistema. Vou aplicar agora e ja volto.",
-    "Tem atualizacao do meu sistema pendente. Vou atualizar rapidinho.",
-    "Atualizacao encontrada aqui no meu sistema. Vou aplicar e ja volto.",
-    "Encontrei update do meu sistema. Vou atualizar e ja volto online.",
-    "Preciso atualizar meu sistema agora. Enquanto roda, ja volto.",
-    "Tem update do meu sistema para fazer. Vou aplicar e ja te aviso quando voltar.",
-  ];
-  return messages[Math.floor(Math.random() * messages.length)];
-}
-
 async function executeUpdate(
   socket: WASocket,
   to: string,

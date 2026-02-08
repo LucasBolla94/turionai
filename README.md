@@ -59,17 +59,14 @@ iwr -useb https://raw.githubusercontent.com/LucasBolla94/turionai/main/install.p
 
 ## 📱 Conectar WhatsApp
 
-1. Execute o comando para ver logs:
-   - **Docker:** `docker-compose logs -f turion`
-   - **PM2:** `pm2 logs turion`
+1. Execute o instalador ou `docker-compose up -d`
+2. Nos logs aparecerá o **QR Code** e uma **senha de 4 dígitos**
+3. Escaneie o QR Code com WhatsApp (Menu → Aparelhos conectados)
+4. Envie a **senha de 4 dígitos** no WhatsApp para identificar-se como dono
+5. O bot vai te guiar pelo setup: API key → nome do bot → seu nome → cidade
+6. **Pronto!** Após confirmar, o bot está funcional
 
-2. Escaneie o QR Code que aparecerá nos logs:
-   - Abrir WhatsApp no celular
-   - Menu → Aparelhos conectados
-   - Conectar novo aparelho
-   - Escanear QR Code
-
-3. **Pronto!** Envie "Oi" no WhatsApp conectado para testar
+> **Dúvidas?** Acesse [turion.network](https://www.turion.network)
 
 ---
 
@@ -128,11 +125,11 @@ Gateway → Orchestrator → Agents → Memory → Actions
 - Feature Flags System
 - WhatsApp Integration
 
-🚧 **Phase 2 - Inteligência (Em desenvolvimento)**
-- Auto-Approval System
-- Email Agent
-- Task Manager Agent
-- Notification Agent
+🚧 **Phase 2 - Autonomia (Em desenvolvimento)**
+- Sistema de aprendizado auto-learning de comandos
+- Motor de confiança 3 níveis (verde/amarelo/vermelho)
+- ScriptAgent para execução inteligente
+- Auditoria completa de todas as ações
 
 ---
 
@@ -141,23 +138,21 @@ Gateway → Orchestrator → Agents → Memory → Actions
 ### Variáveis Essenciais
 
 ```env
-# API Keys (Obrigatório)
+# API Key (Obrigatório - configurada automaticamente no setup via WhatsApp)
 ANTHROPIC_API_KEY=sk-ant-xxxxx
-XAI_API_KEY=your_grok_api_key_here
 
 # Feature Flags Brain V2 (Opcional)
+TURION_USE_BRAIN_V2=true
 TURION_USE_GATEWAY=true
 TURION_USE_ORCHESTRATOR=true
 TURION_USE_MEMORY=true
-TURION_AUTO_APPROVE=false
 
 # Configurações Gerais
-TURION_XAI_MODEL=grok-4-1-fast-reasoning
 TURION_ALLOWLIST=
 TURION_TIMEZONE=America/Sao_Paulo
 ```
 
-Copie `.env.example` para `.env` e configure suas chaves.
+> **Nota:** A `ANTHROPIC_API_KEY` é pedida automaticamente durante o setup via WhatsApp. Não precisa configurar manualmente.
 
 ---
 
@@ -214,9 +209,9 @@ Consulte o [Guia de Instalação Completo](INSTALL.md#-solução-de-problemas)
 ## 📊 Status do Projeto
 
 **Versão:** 1.1.1
-**Progresso:** 28.6% (8/28 features)
+**IA:** Anthropic Claude (claude-sonnet-4-5-20250929) - provider único
 **Phase 1:** ✅ COMPLETA (8/8)
-**Phase 2:** 🚧 Em desenvolvimento (0/8)
+**Phase 2:** 🚧 Em desenvolvimento (0/5)
 
 ---
 
@@ -224,23 +219,25 @@ Consulte o [Guia de Instalação Completo](INSTALL.md#-solução-de-problemas)
 
 ```
 turionai/
-├── src/                    # Código TypeScript
-│   ├── brain/              # Brain System V2
-│   │   ├── gateway/        # Gateway de mensagens
-│   │   ├── orchestrator/   # Orchestrator inteligente
-│   │   ├── agents/         # Agents especializados
-│   │   └── memory/         # Memory System
-│   ├── channels/           # Integração WhatsApp
-│   └── features/           # Feature Flags
-├── state/                  # Dados persistidos
-│   ├── conversations/      # Conversas JSONL
-│   ├── memory/             # Memória do sistema
-│   └── audit/              # Logs de auditoria
-├── logs/                   # Logs de aplicação
-├── auth_info/              # Autenticação WhatsApp
-├── Dockerfile              # Build multi-stage
-├── docker-compose.yml      # Configuração Docker
-└── .env                    # Variáveis de ambiente
+├── src/
+│   ├── channels/whatsapp.ts    # Handler principal WhatsApp
+│   ├── core/                   # Sistema core (brain legado, owner, env)
+│   ├── brain/                  # Brain System V2
+│   │   ├── orchestrator.ts     # Classificador de intents
+│   │   ├── migrationWrapper.ts # Bridge Legacy <-> V2
+│   │   ├── actionExecutor.ts   # Executor de ações
+│   │   ├── agents/             # ChatAgent, CronAgent
+│   │   └── memory/             # 3 camadas (RAM, sessão, longo prazo)
+│   ├── gateway/                # Abstração de canais
+│   ├── skills/                 # Skills legado (script, email, logs)
+│   └── featureFlags/           # Feature flags por usuário
+├── state/                      # Dados persistidos (JSON/JSONL)
+├── logs/                       # Logs de aplicação
+├── auth_info/                  # Autenticação WhatsApp
+├── Dockerfile                  # Multi-stage build (Alpine)
+├── docker-compose.yml          # Volumes + configuração
+├── docker-entrypoint.sh        # Fix permissões + su-exec
+└── install.sh                  # Instalador automático
 ```
 
 ---
@@ -275,10 +272,10 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 Após instalar o Turion:
 
 1. ✅ Escaneie o QR Code do WhatsApp
-2. ✅ Envie "Oi" para testar a conexão
-3. ✅ Teste comandos básicos
-4. 📖 Leia a [documentação completa](GETTING-STARTED-V1.1.1.md)
-5. 🎯 Configure Feature Flags conforme necessário
+2. ✅ Envie a senha de 4 dígitos
+3. ✅ Complete o setup (API key, nome, cidade)
+4. ✅ Envie "Oi" para testar
+5. 📖 Leia a [documentação completa](GETTING-STARTED-V1.1.1.md)
 
 ---
 
