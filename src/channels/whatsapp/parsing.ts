@@ -63,18 +63,23 @@ export function parseConfirmation(text: string): "confirm" | "cancel" | null {
 export function parseUpdateRequest(text: string): boolean {
   const normalized = text.trim().toLowerCase();
   if (!normalized) return false;
+  // Se menciona modelo/ia/claude/llm, nao e update de sistema
+  if (parseModelUpdateQuestion(text)) return false;
   const hasUpdate =
     normalized.includes("atualiz") || normalized.includes("update") ||
     normalized.includes("faz o update") || normalized.includes("fazer update") ||
     normalized.includes("forca o update") || normalized.includes("forçar o update") ||
+    normalized.includes("se atualiza") || normalized.includes("te atualiza") ||
     normalized.includes("mesmo assim");
   const hasTarget =
     normalized.includes("turion") || normalized.includes("sistema") ||
     normalized.includes("bot") || normalized.includes("agente") ||
-    normalized.includes("modelo");
+    normalized.includes("voce") || normalized.includes("você");
   const hasVerb =
     normalized.includes("faz") || normalized.includes("fazer") ||
-    normalized.includes("forca") || normalized.includes("forçar");
+    normalized.includes("forca") || normalized.includes("forçar") ||
+    normalized.includes("roda") || normalized.includes("rodar") ||
+    normalized.includes("aplica") || normalized.includes("aplicar");
   return hasUpdate && (hasTarget || hasVerb || normalized.length < 20);
 }
 
@@ -93,24 +98,29 @@ export function parseModelUpdateQuestion(text: string): boolean {
   if (!normalized) return false;
   const hasModel =
     normalized.includes("modelo") || normalized.includes("grok") ||
-    normalized.includes("ia") || normalized.includes("llm");
+    normalized.includes("ia") || normalized.includes("llm") ||
+    normalized.includes("claude") || normalized.includes("anthropic") ||
+    normalized.includes("inteligencia");
   const hasUpdate = normalized.includes("update") || normalized.includes("atualiza");
   return hasModel && hasUpdate;
 }
 
 export function buildModelUpdateExplanation(): string {
-  const model = process.env.TURION_XAI_MODEL || "grok-4-1-fast-reasoning";
+  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
   return [
-    "O modelo (Grok) é um serviço externo: eu não faço update dele localmente.",
+    "O modelo de IA (Claude) e um servico externo da Anthropic — eu nao faco update dele localmente.",
     "Modelo configurado agora: " + model + ".",
-    "Se quiser trocar, me diga o modelo exato e eu ajusto a configuracao.",
+    "Se quiser trocar pra outro modelo, me diga qual e eu ajusto a configuracao.",
   ].join("\n");
 }
 
 export function parseApiStatusRequest(text: string): boolean {
   const normalized = text.trim().toLowerCase();
   if (!normalized) return false;
-  const hasApi = normalized.includes("api") || normalized.includes("xai") || normalized.includes("grok");
+  const hasApi =
+    normalized.includes("api") || normalized.includes("anthropic") ||
+    normalized.includes("claude") || normalized.includes("xai") ||
+    normalized.includes("grok");
   const hasCheck =
     normalized.includes("conect") || normalized.includes("ok") ||
     normalized.includes("funcion") || normalized.includes("respond") ||

@@ -1423,119 +1423,33 @@ async function handleBrain(
         return;
       }
 
-      if (parseUpdateCheckRequest(text)) {
-        const checkScript =
-          process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
-      let status = "";
-      try {
-        status = await runScript(checkScript);
-      } catch {
-        status = "";
-      }
-      const decision = resolveUpdateCheck(status);
-      if (decision.kind === "available") {
-        await sendAndLog(socket, to, threadId, pickUpdateFoundMessage());
-        const updateScript =
-          process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
-        await executeUpdate(socket, to, threadId, updateScript);
+      if (parseUpdateCheckRequest(text) || parseUpdateRequest(text) || parseUpdateStatusRequest(text)) {
+        const upToDateMsg = parseUpdateCheckRequest(text)
+          ? "Chequei de novo e continua tudo atualizado por aqui."
+          : parseUpdateRequest(text)
+            ? "Por aqui ta tudo em dia e funcionando certinho. Se quiser, posso checar de novo quando voce quiser."
+            : "Nao achei update novo agora. Se quiser, posso checar de novo.";
+        const fallbackErr = "Nao consegui checar agora.";
+        const checkScript = process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
+        let status = "";
+        try {
+          status = await runScript(checkScript);
+        } catch {
+          status = "";
+        }
+        const decision = resolveUpdateCheck(status);
+        if (decision.kind === "available") {
+          await sendAndLog(socket, to, threadId, pickUpdateFoundMessage());
+          const updateScript = process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
+          await executeUpdate(socket, to, threadId, updateScript);
+        } else if (decision.kind === "up_to_date") {
+          await sendAndLog(socket, to, threadId, upToDateMsg);
+        } else {
+          await sendAndLog(socket, to, threadId, decision.message ?? fallbackErr);
+        }
         await setLastTopic("update_check");
         return;
       }
-      if (decision.kind === "up_to_date") {
-        await sendAndLog(
-          socket,
-          to,
-          threadId,
-          "Chequei de novo e continua tudo atualizado por aqui.",
-        );
-        await setLastTopic("update_check");
-        return;
-      }
-      if (decision.kind === "error") {
-        await sendAndLog(socket, to, threadId, decision.message ?? "Nao consegui checar agora.");
-        await setLastTopic("update_check");
-        return;
-      }
-      await sendAndLog(socket, to, threadId, "Nao consegui checar agora.");
-      await setLastTopic("update_check");
-      return;
-    }
-
-    if (parseUpdateRequest(text)) {
-      const checkScript =
-        process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
-      let status = "";
-      try {
-        status = await runScript(checkScript);
-      } catch {
-        status = "";
-      }
-      const decision = resolveUpdateCheck(status);
-      if (decision.kind === "available") {
-        await sendAndLog(socket, to, threadId, pickUpdateFoundMessage());
-        const updateScript =
-          process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
-        await executeUpdate(socket, to, threadId, updateScript);
-        await setLastTopic("update_check");
-        return;
-      }
-      if (decision.kind === "up_to_date") {
-        await sendAndLog(
-          socket,
-          to,
-          threadId,
-          "Por aqui ta tudo em dia e funcionando certinho. Se quiser, posso checar de novo quando voce quiser.",
-        );
-        await setLastTopic("update_check");
-        return;
-      }
-      if (decision.kind === "error") {
-        await sendAndLog(socket, to, threadId, decision.message ?? "Nao consegui validar o status agora.");
-        await setLastTopic("update_check");
-        return;
-      }
-      await sendAndLog(socket, to, threadId, "Nao consegui validar o status agora.");
-      await setLastTopic("update_check");
-      return;
-    }
-
-    if (parseUpdateStatusRequest(text)) {
-      const checkScript =
-        process.platform === "win32" ? "update_check.ps1" : "update_check.sh";
-      let status = "";
-      try {
-        status = await runScript(checkScript);
-      } catch {
-        status = "";
-      }
-      const decision = resolveUpdateCheck(status);
-      if (decision.kind === "available") {
-        await sendAndLog(socket, to, threadId, pickUpdateFoundMessage());
-        const updateScript =
-          process.platform === "win32" ? "update_self.ps1" : "update_self.sh";
-        await executeUpdate(socket, to, threadId, updateScript);
-        await setLastTopic("update_check");
-        return;
-      }
-      if (decision.kind === "up_to_date") {
-        await sendAndLog(
-          socket,
-          to,
-          threadId,
-          "Nao achei update novo agora. Se quiser, posso checar de novo.",
-        );
-        await setLastTopic("update_check");
-        return;
-      }
-      if (decision.kind === "error") {
-        await sendAndLog(socket, to, threadId, decision.message ?? "Nao consegui checar o status agora.");
-        await setLastTopic("update_check");
-        return;
-      }
-      await sendAndLog(socket, to, threadId, "Nao consegui checar o status agora.");
-      await setLastTopic("update_check");
-      return;
-    }
 
     if (parseGitStatusRequest(text)) {
       const gitStatusScript =
